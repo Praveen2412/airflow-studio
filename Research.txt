@@ -1,0 +1,546 @@
+# VS Code Airflow Extension — Detailed Specification
+
+> **Purpose:** Provide developers a full end-to-end developer lifecycle for Apache Airflow inside Visual Studio Code so they do not need to open the browser. Support **Airflow v2**, **Airflow v3**, **Amazon MWAA**, and self-hosted Airflow installs. MWAA authentication must leverage the **AWS CLI** token flow as a primary option.
+
+---
+
+## 1. Executive summary
+
+This extension converts VS Code into a first-class Airflow management console. It exposes the Airflow REST API surface (DAGs, DAG Runs, Tasks, Task Instances, Logs, Connections, Variables, Pools, XComs, Plugins, and Admin endpoints) through a developer-friendly UI — tree views, command palette actions, and rich webview dashboards.
+
+Key principles:
+- **API-first**: thin client that maps UI actions to Airflow REST API calls.
+- **Version aware**: auto-detect Airflow version (v2 vs v3) and adapt payloads/endpoints and edge behaviors.
+- **MWAA-aware**: support MWAA’s token/CLI flows via `aws` CLI commands and the MWAA API when applicable.
+- **Secure by default**: secrets stored in `SecretStorage` and no plaintext tokens in settings.
+- **DX-first**: fast keyboard commands, inline code hints, and local simulation/mock mode for offline dev.
+
+---
+
+## 2. Supported targets & compatibility matrix
+
+- **Apache Airflow (self-hosted)**: v2.x and v3.x (explicit compatibility handling described below).
+- **Amazon MWAA**: All MWAA environments that expose the Airflow REST API. Authenticate using AWS CLI (`aws mwaa create-web-login-token` and `aws mwaa create-cli-token`) per user preference.
+
+Compatibility notes:
+- Airflow v2 → uses `/api/v1` or `/api/v1`/`/api/v2` endpoints depending on cluster configuration; the stable docs indicate `/api/v2` endpoints are stable and recommended.
+- Airflow v3 → the Airflow project moved major REST API internals; the extension will default to the v2 *stable* endpoint paths where supported and will adapt to any v3-specific differences detected at runtime (headers, field names, or new/removed endpoints).
+
+---
+
+## 3. High-level architecture
+
+```
+VS Code Extension (TypeScript)
+├─ UI: TreeView (DAG explorer), Panels (Logs, Run Console), Webviews (DAG Graph, Run Dashboard)
+├─ Core: API layer + Auth layer + Caching layer + Telemetry
+└─ Optional: Local helper proxy (node) for signed requests, CORS, and heavy log streaming
+
+External:
+- Airflow REST API (self-hosted or MWAA)
+- AWS CLI (for MWAA token flows)
+- Optional backend (SaaS) for paid features
+```
+
+Important implementation note: the extension should be a pure VS Code client for most users. For MWAA or cross-origin / authentication scenarios that are difficult to support directly from the extension, we ship an *optional local helper binary* (node-based) that will receive signed requests (or perform `aws` CLI steps) and forward them to Airflow — this helper runs locally and is *opt-in*.
+
+---
+
+## 4. Authentication & connection management
+
+### Supported authentication methods
+- **Bearer token**: `Authorization: Bearer <token>` — for clusters that issue tokens (recommended for production).
+- **Basic Auth**: `username:password` (only for dev/local setups).
+- **MWAA (CLI token / Web token flow)**: leverage `aws` CLI commands (`create-web-login-token`, `create-cli-token`) to obtain short-lived tokens and hostnames. The extension will call the AWS CLI via the user's shell to keep credentials under the user's AWS-managed flow (no long-lived keys stored by extension).
+- **Proxy-auth**: via the optional helper proxy — useful for OIDC flows or private networks.
+
+### Configuration UI
+- A guided connection wizard (first-run) that collects:
+  - Friendly name (profile)
+  - Type: `self-hosted` | `MWAA`
+  - Base URL (for self-hosted) OR MWAA environment name + AWS region
+  - Auth type selection
+  - Optional: Proxy / Custom CA
+- Profiles stored in `settings.json` referencing secure storage keys for secrets.
+- Provide quick-switch status bar menu for active profile.
+
+### MWAA-specific flow (as requested: use AWS CLI)
+- The extension will shell out to the `aws` CLI using the user's environment to run `aws mwaa create-cli-token --name <env>` or `aws mwaa create-web-login-token --name <env>` depending on the action.
+- The extension parses the JSON response to retrieve `CliToken` / `WebToken` and `WebServerHostname` and then constructs API calls using the token as `Authorization: Bearer <token>` against `https://<WebServerHostname>/api/...` or against the `aws_mwaa/cli` endpoint for CLI passthrough.
+- The extension will detect `aws` CLI presence and show instructions if missing.
+
+Security controls:
+- Tokens are ephemeral (MWAA tokens usually valid 60s to few minutes). The extension will automatically refresh tokens per operation and will not persist them beyond necessary.
+- For non-MWAA Bearer tokens, store in SecretStorage.
+- Option to use `credential_process` or AWS SSO for AWS CLI flows as the user has configured locally.
+
+---
+
+## 5. API endpoint coverage & feature mapping
+
+> Strategy: organize endpoint coverage by logical resource and map them to UX features. Where the REST interface differs between v2/v3, the client will detect and adapt.
+
+### 5.1 DAGs
+**Endpoints**: list DAGs, get DAG details, update DAG (pause/unpause), delete DAG, create DAGRun.
+
+**UX features**:
+- **DAG Explorer** (TreeView): lists DAGs with icons for paused/active and last run status.
+- **Command palette actions**: Trigger DAG, Pause/Unpause, Delete (with confirmation), Edit schedule (open DAG file), Download DAG file (if MWAA supports deploy APIs).
+- **Right-click context menu**: Quick trigger with run configuration modal (logical date, conf JSON).
+- **Inline editor hints**: when editing a DAG file, show a gutter indicator of DAG status and last run status.
+
+**Edge cases**:
+- Pagination & filtering for large DAG lists — implement server-side paging UI.
+
+### 5.2 DAG Runs
+**Endpoints**: list DAG Runs, get DAG Run, clear / cancel / set state, get XComs for run.
+
+**UX features**:
+- **Run history panel**: chronological runs with status, start/end times, duration.
+- **Run timeline**: quick view of task run states (collapsed) in webview.
+- **Actions**: rerun, clear tasks, mark success/failed, set run configuration.
+
+### 5.3 Tasks & Task Instances
+**Endpoints**: get task instances, set state, get task logs, trigger task instance.
+
+**UX features**:
+- **Task list** per run with status icons, durations, owner tags.
+- **Context actions**: retry task, clear task, run task locally (if configured), open log.
+- **Inline failure tips**: show a short excerpt of error output under the task when collapsed.
+
+### 5.4 Logs
+**Endpoints**: get task logs (streaming), expanded log pages.
+
+**UX features**:
+- **Streaming log view**: load logs in a dedicated output channel, support live tailing for running tasks.
+- **Search / filter in logs**: simple grep-like filter box.
+- **Download logs**: save logs to workspace folder.
+
+**Performance considerations**:
+- For MWAA, note payload limits (e.g. 6 MB request/response guidance) — fall back to range requests or pagination when logs are large.
+
+### 5.5 Variables & Connections
+**Endpoints**: list/create/update/delete Variables and Connections.
+
+**UX features**:
+- **Settings editor**: a simple UI to manage variables and connections with CRUD operations.
+- **Secret masking**: hide sensitive fields and allow copy-to-clipboard with a single click (and clearing clip after a time window).
+
+### 5.6 Pools, Pools stats
+**Endpoints**: list pools, update pool slots.
+
+**UX features**:
+- **Pools panel**: quick view and edit of pool slots and descriptions.
+
+### 5.7 XComs
+**Endpoints**: list XComs for DAG Run / Task, delete XCom.
+
+**UX features**:
+- **XCom inspector**: view value, optionally pretty-print JSON or open in an editor tab.
+
+### 5.8 Admin & System endpoints
+**Endpoints**: health checks, scheduler status, workers, metrics, version.
+
+**UX features**:
+- **Status bar**: show connected environment and Airflow version.
+- **Diagnostics panel**: single-click health checks with copyable troubleshooting report.
+
+### 5.9 Plugin & DAG Deployment endpoints (optional)
+**Endpoints**: MWAA has environment management endpoints (create environment, list, deploy via S3). For self-hosted clusters, DAG deployment depends on chosen storage (S3, Git sync, local file mounting).
+
+**UX features**:
+- **Deploy DAG wizard**: Upload DAG to target backend (S3 / Git push / custom endpoint).
+- **Sync status**: show last deployed commit / uploaded file info.
+
+---
+
+## 6. API differences: v2 vs v3 handling
+
+- The extension will attempt to auto-detect API features by calling a `GET /api/v1/health` or `/api/v2/health` or `/api/v1/version` endpoint and parsing the response. If the server returns a v3 characteristic response, the extension will switch to v3 behavior.
+- Differences to handle:
+  - **Field renames**: e.g., log formats or run identifiers might use changed field names; the client uses a mapping layer to normalize to an internal model.
+  - **Endpoint availability**: some administrative endpoints may be removed or moved; the extension attempts fallback strategies and shows graceful errors with clear guidance.
+- Maintain an adapter layer: `AirflowApiAdapter` that exposes normalized methods (`listDags()`, `triggerDag()`, `getTaskLogs()`) while hiding HTTP differences.
+
+---
+
+## 7. Developer Experience (DX)
+
+Core DX goals:
+- Setup in < 2 minutes for local Airflow and < 4 minutes for MWAA (assuming `aws` CLI configured).
+- Minimal friction: quick configuration wizard, secrets stored securely, clear errors with remediation steps.
+- Keyboard-driven: most actions available via Command Palette and keybindings.
+- Real-time feedback: progress notifications when triggering runs and toasts for success/failure.
+
+Developer conveniences:
+- **Mock mode**: run extension against a local mock server for UI development.
+- **Local dev server**: built-in dev command to spin up a minimal local Airflow-like stub for UI testing.
+- **Extensive logging**: extension logs to an output channel and ships a `--verbose` dev mode.
+- **Code snippets**: when the user selects a DAG file, offer code generation snippets (task template, sensor template, retries, XCom helper).
+- **Unit & integration tests**: Jest/ts-jest tests for the `AirflowApiAdapter` using recorded https interactions (nock) and E2E for the TreeView and Commands.
+
+---
+
+## 8. UX / UI details
+
+### Main surfaces
+1. **Activity bar icon**: "Airflow" — opens DAG Explorer view.
+2. **DAG Explorer (TreeView)**: DAGs → Runs → Tasks → Logs.
+3. **Run Dashboard (Webview)**: timeline, task statuses, links to logs, and retry buttons.
+4. **Logs panel**: streaming output channel with search.
+5. **Connection manager**: small settings page to add/edit profiles.
+6. **Inline editor hints**: gutter icons and hover cards when editing a DAG file.
+
+### Interaction examples
+- Right-click a DAG → `Trigger DAG` → modal appears for `logicalDate` + `conf` JSON → confirm → extension triggers API and opens Run Dashboard with spinner until first task starts.
+- Click a Task log → open logs panel and start streaming; a `Tail` toggle will keep polling until run completes.
+
+---
+
+## 9. Error handling, retries & rate limits
+
+- Graceful error messages mapped to common Airflow errors (401/403 → show auth remediation; 404 → show version mismatch or missing endpoint; 413/6MB limit → instruct to use pagination or shorter payload).
+- Automatic exponential backoff for transient errors (5xx), with limited retries.
+- For MWAA token lifetimes, automatically re-run `aws` CLI token generation on 401 responses.
+
+---
+
+## 10. Security & privacy
+
+- **Secrets**: store only in VS Code SecretStorage. Never write tokens to workspace files.
+- **Telemetry**: optional, anonymized telemetry toggled off by default.
+- **Least privilege**: document recommended IAM policies for MWAA usage.
+- **Audit logs**: keep an optional local action history (user-controlled retention).
+
+---
+
+## 11. Testing & QA
+
+- Unit tests for each adapter method.
+- Integration tests against a real Airflow instance (CI matrix with Airflow 2.x and Airflow 3.x docker images).
+- MWAA tests: integration smoke tests using AWS `create-cli-token` mocked in CI (or recorded responses) — due to AWS account needs this is optional and run only in gated runs.
+
+---
+
+## 12. Packaging & distribution
+
+- Package as standard VSIX using `vsce`.
+- Provide GitHub Actions to build and run unit tests, package, and optionally publish to the Marketplace.
+
+---
+
+## 13. Roadmap & milestones (recommended)
+
+**MVP (4 weeks)**
+1. Connection wizard + secure storage
+2. AirflowApiAdapter (self-hosted & MWAA-token via AWS CLI)
+3. DAG Explorer tree + basic actions (trigger, pause/unpause)
+4. Logs viewer (basic get logs)
+
+**v1 (8 weeks)**
+1. DAG Runs history + Run Dashboard webview
+2. Task actions + inline editor hints
+3. Variable/Connection manager
+4. MWAA deploy helpers (S3 upload wizard)
+
+**v2 (12+ weeks)**
+1. Auto-sync + Git deploy
+2. AI-driven failure assist (optional)
+3. Multi-environment dashboards + org-level features
+
+---
+
+## 14. Example API flows (high level pseudocode)
+
+- `Trigger DAG` (self-hosted):
+  1. `AirflowApiAdapter.triggerDag(profile, dagId, { conf })`
+  2. POST `/api/v1/dags/{dagId}/dagRuns` (adapter normalizes for v3 if required)
+  3. Show Run Dashboard
+
+- `Trigger DAG` (MWAA):
+  1. `AWS CLI` -> `aws mwaa create-cli-token --name <env>` (extension exec)
+  2. Parse `CliToken` + `WebServerHostname`.
+  3. POST to `https://<WebServerHostname>/aws_mwaa/cli` with `Authorization: Bearer <CliToken>` body containing `dags trigger ...` (MWAA CLI passthrough) or call REST `/api/...` directly with the token.
+
+---
+
+## 15. Implementation notes & libraries
+
+- TypeScript + `vscode` extension API
+- HTTP: `axios` or `undici` (with adapter layer)
+- Tests: `jest` + `nock` for HTTP mocking
+- Optional helper: Node CLI wrapper executable (pkg) for local proxy tasks
+
+---
+
+## 16. Deliverables I will provide (if you want me to implement next)
+1. Production-ready extension boilerplate (TypeScript) with the connection wizard and DAG Explorer MVP.
+2. `AirflowApiAdapter` with test coverage and MWAA `aws` CLI token automation.
+3. Example CI workflow and publishing steps.
+
+---
+
+## Appendix A — Internal normalized models
+
+- `DAGSummary`, `DAGDetail`, `DagRunSummary`, `TaskInstanceModel`, `LogChunk`, `VariableModel`, `ConnectionModel` — each model will define a minimal common fieldset and include a `raw` field to hold unnormalized API responses.
+
+---
+
+## Appendix B — Known limitations & decisions
+
+1. MWAA third-party limitations: not all Airflow CLI/API operations are supported by MWAA in managed contexts — the extension will detect unsupported operations and provide guidance.
+2. Some Airflow installations may be behind private networks; optional local helper will be provided.
+3. Because Airflow 3 changed internals, we adopt an adapter pattern instead of hard-coded endpoints.
+
+---
+
+*End of specification*
+
+# VS Code Airflow Extension (MVP) – Specification  
+
+**Executive Summary:** This spec defines a minimal VS Code extension to manage Apache Airflow (self‑hosted v2/v3) and AWS MWAA via REST/API.  The goal is an MVP that lets developers **configure an Airflow connection (self or MWAA)**, **list/pause/trigger DAGs**, **view recent DAG runs**, and **fetch logs**, all inside VS Code (no browser).  It covers assumptions, user flows, supported endpoints (v2 vs v3 differences), MWAA AWS CLI token flow (with commands), auth methods and secure storage, the `AirflowApiAdapter` interface, data models, UI components (TreeView, commands), error/retry, logging, connection profile schema, security notes, testing/CI, and a development roadmap.  
+
+- **Airflow Versions:** Supports Airflow v2.x and v3.x.  Airflow 3 uses “FastAPI” endpoints under `/api/v2` (stable API) instead of `/api/v1`【45†L12-L16】.  The adapter will auto-detect version and call `/api/v1` (for v2) or `/api/v2` (for v3).  
+- **AWS MWAA:** Calls are proxied through AWS MWAA.  We use the AWS CLI `mwaa create-cli-token` flow to authenticate and invoke Airflow commands, as per AWS docs【33†L75-L79】.  
+- **MVP Scope:** List DAGs; **Trigger DAG**; **Pause/Unpause DAG**; **View DAG runs**; **View Task logs**.  No UI graph, no DAG editing, no variables/pools etc.  
+
+## Assumptions and Context  
+- **Airflow API:** We target the *stable REST API*.  Airflow 2 uses `/api/v1/...` endpoints; Airflow 3 replaces these with `/api/v2/...`【45†L12-L16】.  We **won’t use experimental API** or UI-only endpoints.  
+- **Authentication:** Airflow may be secured with **Basic Auth or JWT**.  By default, Airflow can use Basic auth via `[api] auth_backends = airflow.api.auth.backend.basic_auth`【35†L203-L212】.  Alternatively, Airflow 3 supports obtaining a JWT token via `POST /auth/token` (given a user/password)【14†L168-L177】.  The extension will allow either method: users can enter credentials or a token.  
+- **Secure Storage:** Credentials/tokens are stored using VS Code’s [`SecretStorage`](https://code.visualstudio.com/api/references/vscode-api#SecretStorage) (encrypted), not in plain text.  Connection profiles (below) use SecretStorage for secrets.  
+- **MWAA Integration:** For AWS MWAA, direct API calls must be signed with AWS IAM.  To simplify, we use the AWS CLI: run `aws mwaa create-cli-token` to get a short‑lived token and webserver hostname【33†L75-L79】, then post a CLI command to the Airflow webserver.  (CORS is not an issue for extension code, but we note it for Airflow settings).  
+
+## Goals and Success Criteria  
+- **Goal:** “Never open the Airflow UI after initial setup.” The developer can do all daily tasks (triggering, pausing, viewing runs/logs) within VS Code.  
+- **Success:** Extension can connect to Airflow (v2/v3 or MWAA), list current DAGs, allow triggering and pausing, display a few latest runs and logs without errors.  It should handle version differences seamlessly.  
+
+## Strict MVP Feature List  
+1. **Connection Setup:** User provides a name, Airflow URL, and auth (Basic user/pass or Bearer token). For MWAA, user provides AWS profile/region and environment name.  
+2. **List DAGs:** Display active DAGs in a sidebar (TreeView), showing name and status (running/paused).  
+3. **Trigger DAG:** From a DAG item, command to trigger a new run (optionally with a JSON config).  
+4. **Pause/Unpause DAG:** Toggle DAG pause state via TreeView context or command.  
+5. **List DAG Runs:** Show recent DAG runs (ID, state, start/end times) on demand.  
+6. **View Logs:** Fetch and display a selected task’s logs (for the latest run or chosen run) in a text pane.  
+7. **Version Handling:** Automatically use `/api/v1` for Airflow 2.x, `/api/v2` for Airflow 3.x (with required fields).  
+
+*Excluded:* No UI graph, no DAG deployment/push, no variable/connection editing, no advanced scheduling features, no translation/localization.  
+
+## User Flows  
+- **First Use:** User installs extension. Runs "Airflow: Add Connection". Enters:
+  - A name (e.g. "Airflow-Prod").  
+  - Connection details: URL (e.g. http://host:8080), Auth type (Basic or Token).  
+  - **Basic Auth flow:** User enters username+password. On save, the extension tests `GET /api/v1/health` or /dags with Basic to verify. The password is saved in SecretStorage, never shown.  
+  - **Token flow:** If using Airflow 3+, user can generate a JWT token via Airflow UI/CLI and paste it.  
+  - **MWAA flow:** User selects “AWS MWAA”. They enter AWS region (or use default) and MWAA environment name. No password needed. We test by calling `aws mwaa create-cli-token`.  
+  - On success, show connection in status bar or menu.  
+- **Listing DAGs:** User opens "Airflow: Show DAGs" (or TreeView auto-refresh). The extension calls `GET /api/v{v}/dags` and displays a collapsible tree of DAG names. Each DAG entry shows an icon (🟢 or 🟡 for paused, etc).  
+- **Triggering:** Right-click (or command palette) on a DAG node and choose "Trigger DAG". A prompt for optional JSON conf appears. Then POST `/dags/{dag_id}/dagRuns`. If success, notify user; on error, show details.  
+- **Pausing:** Right-click on DAG node → “Pause/Resume DAG”. This calls PATCH `/dags/{dag_id}` with `{"is_paused":true/false}`【38†L382-L389】. Update icon on success.  
+- **Viewing Runs:** On a DAG node, choose “View Runs”. This fetches `/dags/{dag_id}/dagRuns?limit=10` and shows a quick-pick or panel listing recent runs (ID, state). Selecting a run can highlight logs or details.  
+- **Viewing Logs:** After selecting a run, the user picks a task (maybe via quick-pick of task IDs from `/taskInstances`). Then GET `/dags/{dag_id}/dagRuns/{run_id}/taskInstances/{task_id}/logs/{try_number}`【43†L252-L260】【49†L90-L99】. Display logs in a new text editor.  
+
+## Airflow REST API Endpoints (v2 vs v3)  
+
+| **Feature**       | **Airflow v2 Endpoint (/api/v1)**                                       | **Airflow 3 Endpoint (/api/v2)**                                      |
+|-------------------|-------------------------------------------------------------------------|-----------------------------------------------------------------------|
+| **List DAGs**     | `GET /api/v1/dags?limit={n}&offset={n}`【49†L90-L99】                   | `GET /api/v2/dags` (same query params)【45†L12-L16】                  |
+| **Get DAG Info**  | `GET /api/v1/dags/{dag_id}` (returns DAG details)                       | `GET /api/v2/dags/{dag_id}`                                           |
+| **Trigger DAG**   | `POST /api/v1/dags/{dag_id}/dagRuns` (optional JSON: `{"conf":…}`)      | `POST /api/v2/dags/{dag_id}/dagRuns` – **requires** `{"execution_date": ...}` in v3【25†L5857-L5864】 |
+| **List DAG Runs** | `GET /api/v1/dags/{dag_id}/dagRuns?limit={n}`                           | `GET /api/v2/dags/{dag_id}/dagRuns`                                   |
+| **Get Run**       | `GET /api/v1/dags/{dag_id}/dagRuns/{dag_run_id}`                        | `GET /api/v2/dags/{dag_id}/dagRuns/{dag_run_id}`                      |
+| **Pause/Resume**  | `PATCH /api/v1/dags/{dag_id}?update_mask=is_paused` body `{"is_paused":true/false}`【38†L382-L389】  | `PATCH /api/v2/dags/{dag_id}?update_mask=is_paused` (same body)      |
+| **List Tasks**    | `GET /api/v1/dags/{dag_id}/dagRuns/{run_id}/taskInstances`             | `GET /api/v2/dags/{dag_id}/dagRuns/{run_id}/taskInstances`            |
+| **Get Logs**      | `GET /api/v1/dags/{dag_id}/dagRuns/{run_id}/taskInstances/{task_id}/logs/{try_number}`【49†L90-L99】 | `GET /api/v2/dags/{dag_id}/dagRuns/{run_id}/taskInstances/{task_id}/logs/{try_number}` |
+| **(Other)**       | Variables, Connections, Pools etc – *excluded from MVP*.              | —                                                                     |
+
+*Notes:* 
+- Use `/api/v1` for Airflow 2.x.  Use `/api/v2` for Airflow 3.x; the adapter will detect (see below).  
+- The v3 API requires a UTC “execution_date” (logical date) for `POST dagRuns`【25†L5857-L5864】. In CLI mode we include `--logical-date ...`.  
+- Rate-limit/ pagination: default page size is 100【14†L208-L214】.  
+- All requests include an `Authorization` header (Basic or Bearer).  
+
+## AWS MWAA CLI Auth Flow  
+
+For MWAA, we do **not** call the Airflow endpoints directly (SigV4) but use the AWS CLI token trick【33†L75-L79】.  Sequence (illustrated below):
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Extension
+    participant AWS_CLI as AWS CLI
+    participant MWAA_Airflow as MWAA Webserver
+    User->>Extension: “Trigger DAG on MWAA”
+    Extension->>AWS_CLI: aws mwaa create-cli-token --region $REGION --name $ENV
+    AWS_CLI-->>Extension: JSON with `CliToken` and `WebServerHostname`
+    Extension->>MWAA_Airflow: POST https://$WEB_SERVER_HOSTNAME/aws_mwaa/cli
+         header: Authorization: Bearer $CliToken
+         data: "dags trigger my_dag [--logical-date ...]"
+    MWAA_Airflow-->>Extension: JSON (`stdout`,`stderr` in base64)
+    Extension->>User: Display output / logs
+```
+
+As AWS docs show, the CLI commands are:  
+- `aws mwaa create-cli-token --name YOUR_ENVIRONMENT_NAME`【33†L75-L79】.  
+- Parse `.CliToken` and `.WebServerHostname` from the returned JSON.  
+- Then POST to `https://<WebServerHostname>/aws_mwaa/cli` with `Authorization: Bearer <CliToken>` and `Content-Type: text/plain` headers.  
+  - For **Airflow 2**: `--data-raw "dags trigger YOUR_DAG_NAME"` (as bash)【25†L5879-L5886】.  
+  - For **Airflow 3**: include `--logical-date $(date -u +"%Y-%m-%dT%H:%M:%SZ")`【25†L5857-L5864】.  
+- The response JSON contains `stdout` (base64) and `stderr`. Decode and present to user.  
+
+*Important:* MWAA CLI tokens expire after 60 seconds, so treat each call as single-use【33†L23-L28】.  Do not reuse tokens, and do not overlap multiple CLI calls concurrently.  
+
+## Authentication and Secure Storage  
+- **Basic Auth:** Support `Authorization: Basic <base64>`【35†L203-L212】.  (VS Code HTTP libraries can set `auth: {username,password}`).  
+- **Bearer Token:** The extension can call Airflow’s own `/auth/token` endpoint if user provides credentials (Airflow 3 example)【14†L168-L177】, or accept a pre-generated token.  
+- **AWS MWAA:** Only via AWS CLI token (no user/pass for Airflow).  
+- **Storage:** Connection profiles (JSON) have fields: `{ name, url, type, authType, username?, password?, token?, region?, envName? }`.  Store sensitive fields in `SecretStorage`; keep profile files lean (omit raw secrets).  
+
+_Table: Connection Profile Schema_  
+| Field           | Required/Type       | Description                                 |
+|-----------------|---------------------|---------------------------------------------|
+| `name`          | required, string    | Friendly connection name.                  |
+| `type`          | required, enum      | `"airflow"`.                                |
+| `url`           | required, string    | Base Airflow URL (e.g. `http://host:8080`). |
+| `authType`      | required, string    | `"basic"`, `"token"`, or `"mwaa"`.          |
+| `username`      | if Basic, string    | Airflow user (for Basic auth).             |
+| `password`      | if Basic, secret    | Airflow password (stored in SecretStorage). |
+| `token`         | if Bearer, string   | JWT token (SecretStorage).                 |
+| `region`        | if MWAA, string     | AWS region for MWAA env.                  |
+| `envName`       | if MWAA, string     | AWS MWAA environment name.                |
+| `detectVersion` | optional, bool     | Auto-detect Airflow version on connect.   |
+
+*Citations:* Airflow Basic auth is documented as sending `Authorization: Basic ...`【35†L203-L212】.  
+
+## `AirflowApiAdapter` Design  
+This core interface abstracts Airflow and MWAA differences. It might look like:
+
+```ts
+interface AirflowApiAdapter {
+  listDags(): Promise<DagItem[]>;  
+  triggerDag(dagId: string, conf?: object): Promise<DagRun>;  
+  pauseDag(dagId: string): Promise<void>;  
+  unpauseDag(dagId: string): Promise<void>;  
+  listDagRuns(dagId: string): Promise<DagRun[]>;  
+  getTaskLogs(dagId: string, runId: string, taskId: string, tryNumber: number): Promise<string>;  
+  // (Optional) getDagTasks(dagId, runId): Promise<string[]>; 
+}
+```
+
+- **Version detection:** On first connect, call a simple endpoint (e.g. `GET /api/v1/dags?limit=1` or `/api/v2/dags`) and check success or presence of `/api/v2`.  If `/api/v2` works, set version = 3.x; else version = 2.x.  Alternatively, use `GET /api/v1/health` or check the `X-Airflow-Version` header if exposed.  
+- **Implementation:** Internally construct URLs with either `/api/v1/` or `/api/v2/`.  In v3 mode, include extra fields (e.g. `execution_date`) as required.  For MWAA, this adapter will execute AWS CLI and then call `POST /aws_mwaa/cli` with appropriate commands (a special path).  
+
+## Data Models (minimal fields)  
+Define simple TypeScript interfaces (only needed fields):
+
+```ts
+interface DagItem {
+  dag_id: string;
+  description?: string;
+  is_paused: boolean;
+  is_active: boolean;
+  // (v2: last scheduler/last run summary if needed)
+}
+interface DagRun {
+  dag_id: string;
+  dag_run_id: string;
+  state: string;
+  run_id: string;
+  execution_date: string;
+  start_date: string;
+  end_date: string;
+}
+interface TaskInstance {
+  task_id: string;
+  state: string;
+  try_number: number;
+}
+```
+
+- Only include fields used by UI (ID, state, timestamps).  
+- When fetching logs, API returns content (possibly base64-encoded). Represent as `string`.  
+
+## UI Components and Commands  
+- **TreeView (“Airflow DAGs”):** Shows all DAGs. Root icon = Airflow logo. Each DAG node shows `[▶️] DAG_ID` or similar, and a paused icon if `is_paused==true`.  
+- **Commands (package.json entries):**  
+  - `"airflow.listDags"` – refresh list (bound to TreeView refresh).  
+  - `"airflow.triggerDag"` – context menu on DAG node (“Trigger DAG”).  
+  - `"airflow.pauseDag"` / `"airflow.unpauseDag"` – context menu (“Pause/Resume DAG”).  
+  - `"airflow.showDagRuns"` – context menu (“Show DAG Runs”).  
+  - `"airflow.showLogs"` – submenu or dialog after selecting a run and task.  
+  - Also generic: `"airflow.connect"` (to add connection) and `"airflow.openSettings"`.  
+- **Panels:**  
+  - **Output/Log Panel:** For extension logs (not to be confused with task logs).  
+  - **Text Editor:** To display task logs (plain text). Possibly open as readonly unsaved document.  
+  - **QuickPick:** To select a DAG run or task instance.  
+  - **Buttons/Status:** An Airflow status in status bar (connected to which profile).  
+
+_Table: Commands & Menu_  
+| Command              | Keybinding (optional) | Context/Menu           | Action                                        |
+|----------------------|-----------------------|------------------------|-----------------------------------------------|
+| `airflow.listDags`   | (auto-refresh)        | TreeView refresh       | Reload DAG list from API.                     |
+| `airflow.triggerDag` | —                     | DAG node context menu  | Trigger selected DAG (prompt for conf, then call API). |
+| `airflow.pauseDag`   | —                     | DAG node context menu  | Pause DAG (PATCH is_paused=true).             |
+| `airflow.unpauseDag` | —                     | DAG node context menu  | Unpause DAG (PATCH is_paused=false).          |
+| `airflow.showDagRuns`| —                     | DAG node context menu  | Fetch recent runs, show in QuickPick.         |
+| `airflow.showLogs`   | —                     | Task selection (or run)| Fetch and display logs for a given task try.  |
+
+*Citations:* Airflow API endpoints [38][49] correspond to these actions.  
+
+## Error Handling and Retry  
+- **HTTP Errors:** Catch errors (4xx/5xx) and display a user-friendly error message. For authentication errors (401/403), prompt re-login or token refresh.  
+- **Retries:** For transient errors (network timeouts, 5xx), retry up to 3 times with exponential backoff (e.g. 1s, 2s, 4s) before failing.  
+- **User Feedback:** Use VS Code’s `showErrorMessage` or status bar notifications for failures. Log details to the Output channel.  
+- **MWAA CLI:** If `create-cli-token` fails (e.g. AWS permission), show error. Don’t retry CLI concurrently (AWS warns against it)【33†L23-L28】.  
+
+## Logging and Telemetry  
+- **Extension Logs:** Use a dedicated `OutputChannel` named “Airflow Extension” for verbose logs (requests, responses). Don’t log sensitive data (scrub tokens).  
+- **Usage Telemetry (optional):** Could emit anonymized events (e.g. Dag triggered) if user opts in, but keep minimal.  
+
+## Security Considerations  
+- **CORS:** Not an issue for extension (runs in Node). If we added a Webview (HTML/JS) to interact with Airflow, we’d need to enable CORS on Airflow (`[api] access_control_*`)【14†L188-L197】. But for API calls via Node, ignore.  
+- **Credentials:** Store all secrets (passwords, tokens) in VS Code SecretStorage. Never write them to disk or logs.  
+- **Token Expiry:** Airflow JWT tokens may expire; handle 401 by re-fetching (e.g. call `/auth/token` again) or asking user to refresh. MWAA CLI tokens expire in 60s【33†L23-L28】 – always treat as one-time.  
+- **Connection Leakage:** Do not share Airflow base URL or creds. Avoid embedding raw URLs in telemetry.  
+
+## Testing Plan  
+- **Unit Tests:** Mock `AirflowApiAdapter` to test business logic (TreeView, command handlers). Use [vscode-test](https://code.visualstudio.com/api/working-with-extensions/testing-extension) framework.  
+- **Integration Tests:** Spin up real Airflow environments in Docker (Airflow v2 and v3). For example:  
+  - Use official Airflow images (e.g. `apache/airflow:2.8.3` and `:3.0.0rc` or similar).  
+  - Configure basic auth and create a test DAG.  
+  - Use `docker-compose` with separate services (webserver, scheduler) and expose ports.  
+  - Write tests that run the extension’s commands and verify API calls against the real server (e.g. via mocha + `node-fetch`).  
+- **MWAA Testing:** Simulate MWAA? Possibly mock AWS CLI using a local script or use AWS SAM with `aws mwaa` – but out of scope for MVP. At least unit test logic for parsing CLI JSON.  
+
+## CI/CD Notes  
+- Use GitHub Actions: run `npm test` and lint on push/pull requests.  
+- Optionally, use a matrix to test on multiple Node versions.  
+- For integration, we could have a workflow that builds Docker Compose and runs tests (though Airflow images are large; might skip CI heavy integration).  
+
+## Development Roadmap  
+
+```mermaid
+gantt
+    title Airflow Extension MVP Development Timeline (4 weeks)
+    dateFormat  YYYY-MM-DD
+    axisFormat  %b %-d
+    section Week 1
+    Scaffold Project & Config :a1, 2026-03-22, 3d
+    Connection & Auth Manager   :a2, after a1, 2d
+    API Version Detection       :a3, after a2, 1d
+    section Week 2
+    AirflowApiAdapter Core      :b1, 2026-03-29, 3d
+    ListDags + TreeView UI      :b2, after b1, 2d
+    Trigger/Pause Commands      :b3, after b2, 2d
+    section Week 3
+    Show Runs + QuickPick       :c1, 2026-04-05, 2d
+    Fetch & Display Logs        :c2, after c1, 2d
+    AWS MWAA CLI Integration     :c3, after c2, 3d
+    section Week 4
+    Testing & Fixes             :d1, 2026-04-12, 3d
+    Documentation + Packaging   :d2, after d1, 2d
+    Publish / Market Launch     :d3, after d2, 1d
+```
+
+- **Milestones:** Week 1–2 focus on core adapter and UI for DAG listing/management. Week 3 adds run listing, logs, and MWAA support. Week 4 finalizes testing, docs, and packaging.  
+- **Risks:** MWAA flow may take extra time to debug. Keep MWAA support as last MVP step.  
+
