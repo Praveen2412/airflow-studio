@@ -267,6 +267,21 @@ export class MwaaClient implements IAirflowClient {
     };
   }
 
+  async getDagStats(): Promise<any> {
+    const http = await this.ensureClient();
+    const response = await http.get<any>('/api/v1/dags?limit=100');
+    const dags = response.dags || [];
+    return { total: dags.length, active: dags.filter((d: any) => !d.is_paused).length, paused: dags.filter((d: any) => d.is_paused).length };
+  }
+
+  async getVersion(): Promise<string> {
+    try {
+      const http = await this.ensureClient();
+      const response = await http.get<any>('/api/v1/version');
+      return response.version || 'unknown';
+    } catch { return 'unknown'; }
+  }
+
   async getDagSource(dagId: string): Promise<string> {
     const http = await this.ensureClient();
     const response = await http.get<any>(`/api/v1/dagSources/${dagId}`);

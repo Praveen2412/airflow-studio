@@ -39,6 +39,8 @@ export interface IAirflowClient {
   
   // Health
   getHealth(): Promise<HealthStatus>;
+  getDagStats(): Promise<any>;
+  getVersion(): Promise<string>;
   
   // DAG Source
   getDagSource(dagId: string): Promise<string>;

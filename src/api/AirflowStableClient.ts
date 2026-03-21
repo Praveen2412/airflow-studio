@@ -144,12 +144,10 @@ export class AirflowStableClient implements IAirflowClient {
   async getTaskLogs(dagId: string, taskId: string, dagRunId: string, tryNumber: number, mapIndex?: number): Promise<string> {
     try {
       let url = `/api/v1/dags/${dagId}/dagRuns/${dagRunId}/taskInstances/${taskId}/logs/${tryNumber}`;
-      if (mapIndex !== undefined) {
-        url += `?map_index=${mapIndex}`;
-      }
+      if (mapIndex !== undefined) url += `?map_index=${mapIndex}`;
       const response = await this.http.get<any>(url);
       Logger.debug('AirflowStableClient.getTaskLogs: Success', { dagId, taskId });
-      return response.content || '';
+      return parseLogResponse(response);
     } catch (error: any) {
       Logger.error('AirflowStableClient.getTaskLogs: Failed', error, { dagId, taskId });
       throw error;
@@ -161,10 +159,11 @@ export class AirflowStableClient implements IAirflowClient {
       await this.http.post(`/api/v1/dags/${dagId}/clearTaskInstances`, {
         dag_run_id: dagRunId,
         task_ids: taskIds,
-        include_upstream: options?.includeUpstream,
-        include_downstream: options?.includeDownstream,
-        include_future: options?.includeFuture,
-        only_failed: options?.onlyFailed
+        dry_run: false,
+        include_upstream: options?.includeUpstream ?? false,
+        include_downstream: options?.includeDownstream ?? false,
+        include_future: options?.includeFuture ?? false,
+        only_failed: options?.onlyFailed ?? false
       });
       Logger.info('AirflowStableClient.clearTaskInstances: Success', { dagId, dagRunId });
     } catch (error: any) {
@@ -385,10 +384,37 @@ export class AirflowStableClient implements IAirflowClient {
     }
   }
 
+  async getDagStats(): Promise<any> {
+    try {
+      const response = await this.http.get<any>('/api/v1/dags?limit=100');
+      // v1 has no dagStats endpoint - compute from dag list
+      const dags = response.dags || [];
+      return { total: dags.length, active: dags.filter((d: any) => !d.is_paused).length, paused: dags.filter((d: any) => d.is_paused).length };
+    } catch (error: any) {
+      Logger.error('AirflowStableClient.getDagStats: Failed', error);
+      throw error;
+    }
+  }
+
+  async getVersion(): Promise<string> {
+    try {
+      const response = await this.http.get<any>('/api/v1/version');
+      return response.version || 'unknown';
+    } catch (error: any) {
+      Logger.error('AirflowStableClient.getVersion: Failed', error);
+      return 'unknown';
+    }
+  }
+
   async getDagSource(dagId: string): Promise<string> {
     try {
-      const response = await this.http.get<any>(`/api/v1/dagSources/${dagId}`);
+      // First get the file_token from dag details
+      const dag = await this.http.get<any>(`/api/v1/dags/${dagId}`);
+      const fileToken = dag.file_token;
+      if (!fileToken) throw new Error('No file_token available for this DAG');
+      const response = await this.http.get<any>(`/api/v1/dagSources/${fileToken}`);
       Logger.debug('AirflowStableClient.getDagSource: Success', { dagId });
+      if (typeof response === 'string') return response;
       return response.content || '';
     } catch (error: any) {
       Logger.error('AirflowStableClient.getDagSource: Failed', error, { dagId });
@@ -418,4 +444,28 @@ export class AirflowStableClient implements IAirflowClient {
       throw error;
     }
   }
+}
+
+function parseLogResponse(response: any): string {
+  if (!response) return '';
+  if (typeof response === 'string') return response;
+  // v1 API returns { content: [[timestamp, message], ...] } or { content: string }
+  if (response.content) {
+    if (typeof response.content === 'string') return response.content;
+    if (Array.isArray(response.content)) {
+      return response.content.map((entry: any) => {
+        if (typeof entry === 'string') return entry;
+        if (Array.isArray(entry)) return entry.join(' '); // [timestamp, message]
+        return entry.message || entry.content || JSON.stringify(entry);
+      }).join('\n');
+    }
+  }
+  if (Array.isArray(response)) {
+    return response.map((entry: any) => {
+      if (typeof entry === 'string') return entry;
+      if (Array.isArray(entry)) return entry.join(' ');
+      return entry.message || entry.content || JSON.stringify(entry);
+    }).join('\n');
+  }
+  return JSON.stringify(response, null, 2);
 }

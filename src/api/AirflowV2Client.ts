@@ -149,23 +149,10 @@ export class AirflowV2Client implements IAirflowClient {
   async getTaskLogs(dagId: string, taskId: string, dagRunId: string, tryNumber: number, mapIndex?: number): Promise<string> {
     try {
       let url = `/api/v2/dags/${dagId}/dagRuns/${dagRunId}/taskInstances/${taskId}/logs/${tryNumber}?full_content=true`;
-      if (mapIndex !== undefined) {
-        url += `&map_index=${mapIndex}`;
-      }
+      if (mapIndex !== undefined) url += `&map_index=${mapIndex}`;
       const response = await this.http.get<any>(url);
       Logger.debug('AirflowV2Client.getTaskLogs: Success', { dagId, taskId });
-      // Handle both string and object responses
-      if (typeof response === 'string') {
-        return response;
-      }
-      if (response.content) {
-        return response.content;
-      }
-      // If response is array of log objects, join them
-      if (Array.isArray(response)) {
-        return response.map(log => typeof log === 'string' ? log : JSON.stringify(log)).join('\n');
-      }
-      return JSON.stringify(response, null, 2);
+      return parseLogResponse(response);
     } catch (error: any) {
       Logger.error('AirflowV2Client.getTaskLogs: Failed', error, { dagId, taskId });
       throw error;
@@ -254,9 +241,9 @@ export class AirflowV2Client implements IAirflowClient {
       return response.pools.map((p: any) => ({
         name: p.name,
         slots: p.slots,
-        occupied_slots: p.occupied_slots,
-        running_slots: p.running_slots,
-        queued_slots: p.queued_slots,
+        occupiedSlots: p.occupied_slots,
+        runningSlots: p.running_slots,
+        queuedSlots: p.queued_slots,
         description: p.description
       }));
     } catch (error: any) {
@@ -437,6 +424,37 @@ export class AirflowV2Client implements IAirflowClient {
     }
   }
 
+  async getDagStats(): Promise<any> {
+    try {
+      const response = await this.http.get<any>('/api/v2/dagStats');
+      Logger.debug('AirflowV2Client.getDagStats: Success');
+      // Aggregate stats across all dags
+      let running = 0, queued = 0, success = 0, failed = 0;
+      for (const dag of (response.dags || [])) {
+        for (const s of (dag.stats || [])) {
+          if (s.state === 'running') running += s.count;
+          else if (s.state === 'queued') queued += s.count;
+          else if (s.state === 'success') success += s.count;
+          else if (s.state === 'failed') failed += s.count;
+        }
+      }
+      return { running, queued, success, failed };
+    } catch (error: any) {
+      Logger.error('AirflowV2Client.getDagStats: Failed', error);
+      return {};
+    }
+  }
+
+  async getVersion(): Promise<string> {
+    try {
+      const response = await this.http.get<any>('/api/v2/version');
+      return response.version || 'unknown';
+    } catch (error: any) {
+      Logger.error('AirflowV2Client.getVersion: Failed', error);
+      return 'unknown';
+    }
+  }
+
   async setDagRunState(dagId: string, dagRunId: string, state: string): Promise<void> {
     try {
       await this.http.patch(`/api/v2/dags/${dagId}/dagRuns/${dagRunId}`, { state });
@@ -446,4 +464,27 @@ export class AirflowV2Client implements IAirflowClient {
       throw error;
     }
   }
+}
+
+function parseLogResponse(response: any): string {
+  if (!response) return '';
+  if (typeof response === 'string') return response;
+  if (response.content) {
+    if (typeof response.content === 'string') return response.content;
+    if (Array.isArray(response.content)) {
+      return response.content.map((e: any) => {
+        if (typeof e === 'string') return e;
+        if (Array.isArray(e)) return e.join(' ');
+        return e.message || e.content || JSON.stringify(e);
+      }).join('\n');
+    }
+  }
+  if (Array.isArray(response)) {
+    return response.map((e: any) => {
+      if (typeof e === 'string') return e;
+      if (Array.isArray(e)) return e.join(' ');
+      return e.message || e.content || JSON.stringify(e);
+    }).join('\n');
+  }
+  return JSON.stringify(response, null, 2);
 }
