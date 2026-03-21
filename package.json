@@ -1,299 +1,161 @@
 {
-  "name": "airflow-vscode-extension",
-  "displayName": "Airflow",
-  "description": "Apache Airflow Extension for AWS MWAA - Manage DAGs, View Logs, Monitor Runs",
+  "name": "airflow-vscode",
+  "displayName": "Airflow Manager",
+  "description": "Manage Apache Airflow and AWS MWAA environments from VS Code",
   "version": "0.1.0",
-  "publisher": "airflow-dev",
+  "publisher": "airflow",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-org/airflow-vscode-extension"
+    "url": "https://github.com/yourusername/airflow-vscode-extension"
   },
   "engines": {
-    "vscode": "^1.104.0"
+    "vscode": "^1.80.0"
   },
-  "categories": [
-    "Other"
-  ],
-  "activationEvents": [],
-  "main": "./dist/extension.js",
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "dagTreeView.refreshServer",
-        "title": "Refresh",
-        "icon": "$(refresh)"
+        "command": "airflow.addServer",
+        "title": "Airflow: Add Server"
       },
       {
-        "command": "dagTreeView.connectServer",
-        "title": "Connect to Airflow Server",
-        "icon": "$(plug)"
+        "command": "airflow.editServer",
+        "title": "Airflow: Edit Server"
       },
       {
-        "command": "dagTreeView.addServer",
-        "title": "Add Airflow Server",
-        "icon": "$(add)"
+        "command": "airflow.deleteServer",
+        "title": "Airflow: Delete Server"
       },
       {
-        "command": "dagTreeView.removeServer",
-        "title": "Remove Airflow Server",
-        "icon": "$(remove)"
+        "command": "airflow.testConnection",
+        "title": "Airflow: Test Server Connection"
       },
       {
-        "command": "dagTreeView.filter",
-        "title": "Filter DAGs",
-        "icon": "$(filter)"
+        "command": "airflow.refreshDags",
+        "title": "Airflow: Refresh DAGs"
       },
       {
-        "command": "dagTreeView.showOnlyActive",
-        "title": "Active Only",
-        "icon": "$(circle-large-filled)"
+        "command": "airflow.openDag",
+        "title": "Airflow: Open DAG"
       },
       {
-        "command": "dagTreeView.showOnlyFavorite",
-        "title": "Favorites Only",
-        "icon": "$(bookmark)"
+        "command": "airflow.triggerDag",
+        "title": "Airflow: Trigger DAG with Config"
       },
       {
-        "command": "dagTreeView.viewDagView",
-        "title": "View DAG Details",
-        "icon": "$(preview)"
+        "command": "airflow.pauseDag",
+        "title": "Airflow: Pause DAG"
       },
       {
-        "command": "dagTreeView.triggerDag",
-        "title": "Trigger DAG",
-        "icon": "$(run)"
+        "command": "airflow.unpauseDag",
+        "title": "Airflow: Unpause DAG"
       },
       {
-        "command": "dagTreeView.triggerDagWithConfig",
-        "title": "Trigger DAG with Config"
+        "command": "airflow.deleteDag",
+        "title": "Airflow: Delete DAG"
       },
       {
-        "command": "dagTreeView.pauseDAG",
-        "title": "Pause DAG"
+        "command": "airflow.clearTask",
+        "title": "Airflow: Clear Task Instance(s)"
       },
       {
-        "command": "dagTreeView.unPauseDAG",
-        "title": "Unpause DAG"
+        "command": "airflow.viewLogs",
+        "title": "Airflow: View Task Logs"
       },
       {
-        "command": "dagTreeView.cancelDagRun",
-        "title": "Cancel DAG Run",
-        "icon": "$(debug-stop)"
+        "command": "airflow.openVariables",
+        "title": "Airflow: Open Variables"
       },
       {
-        "command": "dagTreeView.addToFavDAG",
-        "title": "Add to Favorites"
+        "command": "airflow.openPools",
+        "title": "Airflow: Open Pools"
       },
       {
-        "command": "dagTreeView.deleteFromFavDAG",
-        "title": "Remove from Favorites"
+        "command": "airflow.openConnections",
+        "title": "Airflow: Open Connections"
       },
       {
-        "command": "dagTreeView.lastDAGRunLog",
-        "title": "View Logs",
-        "icon": "$(output)"
-      },
-      {
-        "command": "dagTreeView.dagSourceCode",
-        "title": "View Source Code",
-        "icon": "$(code)"
-      },
-      {
-        "command": "dagTreeView.showDagInfo",
-        "title": "DAG Info",
-        "icon": "$(info)"
-      },
-      {
-        "command": "dagTreeView.viewConnections",
-        "title": "View Connections",
-        "icon": "$(link)"
-      },
-      {
-        "command": "dagTreeView.viewVariables",
-        "title": "View Variables",
-        "icon": "$(symbol-variable)"
-      },
-      {
-        "command": "dagTreeView.viewProviders",
-        "title": "View Providers",
-        "icon": "$(package)"
-      },
-      {
-        "command": "dagTreeView.viewServerHealth",
-        "title": "View Server Health",
-        "icon": "$(heart)"
+        "command": "airflow.openHealth",
+        "title": "Airflow: Open Health Check"
       }
     ],
-    "menus": {
-      "view/title": [
-        {
-          "command": "dagTreeView.refreshServer",
-          "when": "view == dagTreeView",
-          "group": "navigation@7"
-        },
-        {
-          "command": "dagTreeView.connectServer",
-          "when": "view == dagTreeView",
-          "group": "navigation@6"
-        },
-        {
-          "command": "dagTreeView.addServer",
-          "when": "view == dagTreeView",
-          "group": "navigation@5"
-        },
-        {
-          "command": "dagTreeView.removeServer",
-          "when": "view == dagTreeView",
-          "group": "navigation@4"
-        },
-        {
-          "command": "dagTreeView.filter",
-          "when": "view == dagTreeView",
-          "group": "navigation@3"
-        },
-        {
-          "command": "dagTreeView.showOnlyActive",
-          "when": "view == dagTreeView",
-          "group": "navigation@2"
-        },
-        {
-          "command": "dagTreeView.showOnlyFavorite",
-          "when": "view == dagTreeView",
-          "group": "navigation@1"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "dagTreeView.viewDagView",
-          "when": "view == dagTreeView",
-          "group": "inline@1"
-        },
-        {
-          "command": "dagTreeView.triggerDag",
-          "when": "view == dagTreeView && viewItem =~ /#!IsRunning#/",
-          "group": "inline@2"
-        },
-        {
-          "command": "dagTreeView.cancelDagRun",
-          "when": "view == dagTreeView && viewItem =~ /#IsRunning#/",
-          "group": "inline@3"
-        },
-        {
-          "command": "dagTreeView.lastDAGRunLog",
-          "when": "view == dagTreeView",
-          "group": "inline@4"
-        },
-        {
-          "command": "dagTreeView.showDagInfo",
-          "when": "view == dagTreeView",
-          "group": "inline@5"
-        },
-        {
-          "command": "dagTreeView.triggerDagWithConfig",
-          "when": "view == dagTreeView && viewItem =~ /#!IsRunning#/",
-          "group": "trigger"
-        },
-        {
-          "command": "dagTreeView.pauseDAG",
-          "when": "view == dagTreeView && viewItem =~ /#!IsPaused#/",
-          "group": "pause"
-        },
-        {
-          "command": "dagTreeView.unPauseDAG",
-          "when": "view == dagTreeView && viewItem =~ /#IsPaused#/",
-          "group": "pause"
-        },
-        {
-          "command": "dagTreeView.addToFavDAG",
-          "when": "view == dagTreeView && viewItem =~ /#!IsFav#/",
-          "group": "fav"
-        },
-        {
-          "command": "dagTreeView.deleteFromFavDAG",
-          "when": "view == dagTreeView && viewItem =~ /#IsFav#/",
-          "group": "fav"
-        },
-        {
-          "command": "dagTreeView.dagSourceCode",
-          "when": "view == dagTreeView",
-          "group": "other"
-        }
-      ]
-    },
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "airflow-explorer",
+          "id": "airflow",
           "title": "Airflow",
-          "icon": "$(cloud)"
+          "icon": "resources/airflow.svg"
         }
       ]
     },
     "views": {
-      "airflow-explorer": [
+      "airflow": [
         {
-          "id": "dagTreeView",
+          "id": "airflowServers",
+          "name": "Servers"
+        },
+        {
+          "id": "airflowDags",
           "name": "DAGs"
         },
         {
-          "id": "adminTreeView",
+          "id": "airflowAdmin",
           "name": "Admin"
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "dagTreeView",
-        "contents": "Connect to your Airflow Server or AWS MWAA environment.\n\n[Connect to Airflow](command:dagTreeView.addServer)\n\nSupports:\n• Self-hosted Airflow (v2.x, v3.x)\n• AWS MWAA (via AWS CLI)\n\nFor MWAA, ensure AWS CLI is configured with proper credentials."
-      }
-    ],
-    "configuration": {
-      "title": "Airflow",
-      "properties": {
-        "airflow.requestTimeout": {
-          "type": "number",
-          "default": 30000,
-          "description": "API request timeout in milliseconds"
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "airflow.editServer",
+          "when": "view == airflowServers && viewItem == server"
         },
-        "airflow.logLevel": {
-          "type": "string",
-          "enum": ["debug", "info", "warn", "error"],
-          "default": "info",
-          "description": "Extension logging level"
+        {
+          "command": "airflow.deleteServer",
+          "when": "view == airflowServers && viewItem == server"
+        },
+        {
+          "command": "airflow.testConnection",
+          "when": "view == airflowServers && viewItem == server"
+        },
+        {
+          "command": "airflow.triggerDag",
+          "when": "view == airflowDags && viewItem == dag"
+        },
+        {
+          "command": "airflow.pauseDag",
+          "when": "view == airflowDags && viewItem == dag"
+        },
+        {
+          "command": "airflow.unpauseDag",
+          "when": "view == airflowDags && viewItem == dag"
+        },
+        {
+          "command": "airflow.deleteDag",
+          "when": "view == airflowDags && viewItem == dag"
         }
-      }
+      ]
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run package",
-    "compile": "webpack",
-    "watch": "webpack --watch",
-    "package": "webpack --mode production --devtool hidden-source-map",
-    "compile-tests": "tsc -p . --outDir out",
-    "watch-tests": "tsc -p . -w --outDir out",
-    "pretest": "npm run compile-tests && npm run compile && npm run lint",
-    "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
   },
   "devDependencies": {
-    "@types/base-64": "^1.0.2",
-    "@types/node": "24.x",
-    "@types/tmp": "^0.2.6",
-    "@types/vscode": "^1.104.0",
-    "@typescript-eslint/eslint-plugin": "^8.48.0",
-    "@typescript-eslint/parser": "^8.48.0",
-    "@vscode/test-electron": "^2.5.2",
-    "eslint": "^9.39.1",
-    "ts-loader": "^9.5.4",
-    "typescript": "^5.9.3",
-    "webpack": "^5.103.0",
-    "webpack-cli": "^6.0.1"
+    "@types/node": "^18.x",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.40.0",
+    "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@vscode-elements/elements": "^2.3.1",
-    "@vscode/codicons": "^0.0.43",
-    "base-64": "^1.0.0",
-    "node-fetch": "^3.3.2",
-    "tmp": "^0.2.5"
+    "axios": "^1.6.0",
+    "@aws-sdk/client-mwaa": "^3.400.0",
+    "@aws-sdk/credential-providers": "^3.400.0"
   }
 }

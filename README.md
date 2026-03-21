@@ -1,108 +1,156 @@
-# Airflow VSCode Extension
+# Airflow VS Code Extension
 
-> Control Apache Airflow workflows without leaving your editor. Works with self-hosted Airflow and AWS MWAA.
+A lightweight VS Code extension for managing Apache Airflow environments directly from your IDE.
 
-## Why Use This Extension?
+## Project Status
 
-Stop switching between VSCode and the Airflow UI. Trigger DAGs, monitor runs, check logs, and browse source code—all from your sidebar.
+✅ **Core Foundation Complete**
+- Server management (self-hosted & MWAA)
+- API client layer with full Airflow REST API support
+- DAG listing and operations (trigger, pause, unpause, delete)
+- Variables, Pools, and Connections listing
+- Health check monitoring
 
-**What You Can Do:**
-- Connect to multiple Airflow servers simultaneously
-- Trigger and control DAG execution with a right-click
-- Monitor running workflows with auto-refresh
-- Search and filter DAGs by name, owner, tags, or status
-- Bookmark your most-used DAGs as favorites
-- Read task logs and DAG source code inline
-- Full AWS MWAA support via AWS CLI
+🟡 **In Progress**
+- DAG detail webview
+- Task instance operations
+- Real-time log viewer
+- Full CRUD for Variables, Pools, Connections
+
+## Features
+
+- **Multi-Environment Support**: Connect to self-hosted Airflow and AWS MWAA
+- **DAG Management**: Browse, trigger, pause/unpause, and delete DAGs
+- **Task Operations**: View task instances, clear tasks, and inspect logs in real-time
+- **Admin Tools**: Manage variables, pools, and connections
+- **Health Monitoring**: Check environment health status
 
 ## Quick Start
 
-**Installation:**
-```bash
-npm install && npm run package
-code --install-extension airflow-vscode-extension-0.1.0.vsix
-```
+### Installation
 
-**Connect to Airflow:**
+1. Clone the repository
+2. Run `npm install`
+3. Run `npm run compile`
+4. Press F5 to launch the extension in debug mode
 
-Open the Airflow sidebar → Click "Connect to Airflow"
+### First Use
 
-*Self-Hosted:* Provide your API URL (`http://localhost:8080/api/v1`), username, and password.
+1. Open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`)
+2. Run `Airflow: Add Server`
+3. Choose server type:
+   - **Self-hosted**: Enter base URL (e.g., http://localhost:8080), username, password
+   - **AWS MWAA**: Enter environment name and AWS region
+4. Start managing your DAGs!
 
-*AWS MWAA:* Enter environment name, AWS region, and optionally an AWS profile.
+### Basic Operations
 
-**Start Managing:**
+**View DAGs**: Click on "DAGs" in the Airflow sidebar
 
-Right-click any DAG to trigger, pause, view logs, or inspect source code. Use the filter icon to narrow down your DAG list.
+**Trigger DAG**: Right-click DAG → "Trigger DAG with Config" → Enter JSON (optional)
 
-## Prerequisites
+**Pause/Unpause**: Right-click DAG → "Pause DAG" or "Unpause DAG"
 
-**Self-Hosted Airflow:**
-- Airflow 2.x or 3.x with REST API enabled
-- Authentication configured (Basic Auth or JWT)
+**View Variables**: Click "Admin" → "Variables" or run `Airflow: Open Variables`
 
-**AWS MWAA:**
-- AWS CLI installed (`aws --version`)
-- IAM permissions for `airflow:CreateCliToken` and `airflow:CreateWebLoginToken`
+**Check Health**: Click "Admin" → "Health Check" or run `Airflow: Open Health Check`
 
-## Configuration Options
+### Troubleshooting
 
-Adjust settings in VSCode preferences:
+**Can't connect**: Verify URL/credentials, run `Airflow: Test Server Connection`
 
-- `airflow.requestTimeout` — API timeout in ms (default: 30000)
-- `airflow.logLevel` — Logging verbosity (default: info)
+**DAGs not loading**: Ensure server is active (check status bar), run `Airflow: Refresh DAGs`
 
-**AWS MWAA IAM Policy Example:**
-```json
-{
-  "Effect": "Allow",
-  "Action": ["airflow:CreateCliToken", "airflow:CreateWebLoginToken"],
-  "Resource": "arn:aws:airflow:*:*:environment/*"
-}
-```
+**Extension not working**: Check Output panel → "Extension Host", reload window
 
-## Common Issues
+## Usage
 
-**Connection Refused:**
-Check that Airflow REST API is enabled and accessible. Verify credentials and network access.
+### Connect to Airflow
 
-**MWAA Token Errors:**
-Run `aws sts get-caller-identity` to confirm AWS credentials. Ensure IAM permissions are correct.
+- **Self-hosted**: Provide base URL and credentials
+- **AWS MWAA**: Provide environment name and AWS region
 
-**Empty DAG List:**
-Confirm Airflow is running and the API endpoint is correct (v1 vs v2). Check Output panel (View → Output → Airflow) for errors.
+### DAG Operations
+
+- View all DAGs in the sidebar
+- Trigger DAGs with JSON configuration
+- Pause/unpause DAGs
+- Delete DAGs
+- View DAG runs and task instances
+
+### Task Logs
+
+- Real-time log streaming for running tasks
+- Auto-refresh with manual control
+- Search and copy log content
+
+### Admin Management
+
+- Create, edit, and delete variables
+- Manage connection pools
+- Configure connections with secret masking
+
+## Commands
+
+- `Airflow: Add Server` - Add new Airflow environment
+- `Airflow: Edit Server` - Edit server configuration
+- `Airflow: Test Server Connection` - Test connectivity
+- `Airflow: Refresh DAGs` - Refresh DAG list
+- `Airflow: Trigger DAG with Config` - Trigger DAG with JSON config
+- `Airflow: View Task Logs` - Open task log viewer
+- `Airflow: Open Variables` - Manage variables
+- `Airflow: Open Pools` - Manage pools
+- `Airflow: Open Connections` - Manage connections
+- `Airflow: Open Health Check` - View environment health
+
+## Requirements
+
+- VS Code 1.80.0 or higher
+- Access to Airflow REST API (v1 or later)
+- For MWAA: AWS credentials configured
 
 ## Development
 
-```bash
-npm install          # Install dependencies
-npm run compile      # Build TypeScript
-npm run watch        # Auto-rebuild on changes
-npm run package      # Create .vsix package
-```
+### Setup
+1. Install dependencies: `npm install`
+2. Compile: `npm run compile`
+3. Watch mode: `npm run watch`
+4. Debug: Press F5
 
-**Architecture:**
+### Project Structure
 ```
 src/
-├── core/              # Business logic (services, models, interfaces)
-├── infrastructure/    # External concerns (API, storage, logging)
-├── presentation/      # UI layer (views, providers, items)
-└── shared/           # Utilities (constants, events, utils)
+├── extension.ts              # Entry point
+├── api/                      # API clients
+│   ├── IAirflowClient.ts
+│   ├── AirflowStableClient.ts
+│   ├── MwaaClient.ts
+│   └── HttpClient.ts
+├── models/index.ts           # Data models
+├── managers/ServerManager.ts # Business logic
+└── providers/                # Tree views
+    ├── ServersTreeProvider.ts
+    ├── DagsTreeProvider.ts
+    └── AdminTreeProvider.ts
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design documentation.
+### Adding Features
+1. Add method to `IAirflowClient.ts`
+2. Implement in both `AirflowStableClient.ts` and `MwaaClient.ts`
+3. Add command in `extension.ts`
+4. Update `package.json` contributes section
 
-## What's Next
+## Documentation
 
-- Detailed DAG run history in webview
-- Task instance inspection
-- Admin panels for Connections, Variables, and Providers
-- Server health dashboard
-- Advanced log viewer with search
+- [README.md](README.md) - Project overview and usage ✅
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Technical design and structure ✅
+- [TRACKER.md](TRACKER.md) - Implementation progress ✅
 
-## Contributing
+## Security
 
-Pull requests welcome. Fork, branch, code, and submit.
+- Credentials stored securely using VS Code Secret Storage
+- Secrets masked in UI by default
+- No sensitive data in logs or error messages
 
 ## License
 

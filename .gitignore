@@ -1,7 +1,4 @@
-node_modules/
-out/
-dist/
+node_modules
+out
 *.vsix
-.vscode-test/
-.DS_Store
-*.log
+.vscode-test
