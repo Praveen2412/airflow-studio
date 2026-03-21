@@ -58,5 +58,12 @@ class DagTreeItem extends vscode.TreeItem {
                      dag.lastRunState === 'failed' ? 'error' :
                      dag.lastRunState === 'running' ? 'sync~spin' : 'circle-outline';
     this.iconPath = new vscode.ThemeIcon(iconName);
+    
+    // Click to open DAG details
+    this.command = {
+      command: 'airflow.openDagDetails',
+      title: 'Open DAG Details',
+      arguments: [this.dag]
+    };
   }
 }

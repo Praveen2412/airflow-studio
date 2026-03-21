@@ -1,0 +1,530 @@
+  private getHtml(dag: DagSummary): string {
+    const tasks = this.dagDetails?.tasks || [];
+    return `<!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+          padding: 20px; 
+          font-family: var(--vscode-font-family); 
+          color: var(--vscode-foreground);
+          background: var(--vscode-editor-background);
+        }
+        .header { 
+          display: flex; 
+          justify-content: space-between; 
+          align-items: center; 
+          margin-bottom: 20px;
+          flex-wrap: wrap;
+          gap: 10px;
+        }
+        h1 { font-size: 24px; margin: 0; }
+        h2 { font-size: 18px; margin: 0 0 15px 0; }
+        .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        button { 
+          padding: 8px 16px; 
+          background: var(--vscode-button-background); 
+          color: var(--vscode-button-foreground); 
+          border: none; 
+          cursor: pointer; 
+          border-radius: 4px;
+          font-size: 13px;
+        }
+        button:hover { background: var(--vscode-button-hoverBackground); }
+        button.secondary { 
+          background: var(--vscode-button-secondaryBackground); 
+          color: var(--vscode-button-secondaryForeground); 
+        }
+        button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+        button.small { padding: 4px 10px; font-size: 12px; }
+        
+        .grid { 
+          display: grid; 
+          grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
+          gap: 15px; 
+          margin-bottom: 20px;
+        }
+        .card { 
+          background: var(--vscode-sideBar-background); 
+          padding: 15px; 
+          border-radius: 6px;
+          border: 1px solid var(--vscode-panel-border);
+        }
+        .info-row { 
+          display: flex; 
+          justify-content: space-between; 
+          padding: 6px 0; 
+          border-bottom: 1px solid var(--vscode-panel-border);
+        }
+        .info-row:last-child { border-bottom: none; }
+        .label { font-weight: 600; color: var(--vscode-descriptionForeground); }
+        .badge { 
+          display: inline-block; 
+          padding: 3px 8px; 
+          margin: 2px; 
+          background: var(--vscode-badge-background); 
+          color: var(--vscode-badge-foreground); 
+          border-radius: 12px; 
+          font-size: 11px;
+        }
+        .status { 
+          padding: 4px 10px; 
+          border-radius: 4px; 
+          font-size: 12px; 
+          font-weight: 600;
+        }
+        .status.active { background: #28a745; color: white; }
+        .status.paused { background: #ffc107; color: black; }
+        .status.success { background: #28a745; color: white; }
+        .status.failed { background: #dc3545; color: white; }
+        .status.running { background: #007bff; color: white; }
+        .status.queued { background: #6c757d; color: white; }
+        .status.up_for_retry { background: #fd7e14; color: white; }
+        
+        .tabs { 
+          display: flex; 
+          gap: 5px; 
+          margin-bottom: 15px; 
+          border-bottom: 2px solid var(--vscode-panel-border);
+        }
+        .tab { 
+          padding: 10px 20px; 
+          background: transparent; 
+          border: none; 
+          cursor: pointer; 
+          border-bottom: 3px solid transparent;
+          color: var(--vscode-foreground);
+        }
+        .tab.active { 
+          border-bottom-color: var(--vscode-button-background); 
+          font-weight: 600;
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        table { 
+          width: 100%; 
+          border-collapse: collapse; 
+          background: var(--vscode-sideBar-background);
+        }
+        th, td { 
+          padding: 10px; 
+          text-align: left; 
+          border-bottom: 1px solid var(--vscode-panel-border);
+        }
+        th { 
+          font-weight: 600; 
+          background: var(--vscode-editor-background);
+          position: sticky;
+          top: 0;
+        }
+        tr:hover { background: var(--vscode-list-hoverBackground); }
+        tr.clickable { cursor: pointer; }
+        
+        .empty { 
+          text-align: center; 
+          padding: 40px; 
+          color: var(--vscode-descriptionForeground);
+        }
+        .loading { text-align: center; padding: 20px; }
+        
+        #codeView, #logsView { display: none; }
+        #codeView.active, #logsView.active { display: block; }
+        
+        pre { 
+          background: var(--vscode-textCodeBlock-background); 
+          padding: 15px; 
+          border-radius: 4px; 
+          overflow-x: auto;
+          white-space: pre-wrap;
+          word-wrap: break-word;
+          font-family: var(--vscode-editor-font-family);
+          font-size: 13px;
+          line-height: 1.5;
+        }
+        
+        .modal {
+          display: none;
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0,0,0,0.5);
+          z-index: 1000;
+        }
+        .modal.active { display: flex; align-items: center; justify-content: center; }
+        .modal-content {
+          background: var(--vscode-editor-background);
+          padding: 20px;
+          border-radius: 6px;
+          min-width: 400px;
+          max-width: 600px;
+        }
+        .modal-content h3 { margin-bottom: 15px; }
+        .modal-content label { display: block; margin: 10px 0 5px; }
+        .modal-content input, .modal-content textarea, .modal-content select {
+          width: 100%;
+          padding: 8px;
+          background: var(--vscode-input-background);
+          color: var(--vscode-input-foreground);
+          border: 1px solid var(--vscode-input-border);
+          border-radius: 3px;
+        }
+        .modal-actions { margin-top: 15px; display: flex; gap: 10px; justify-content: flex-end; }
+      </style>
+    </head>
+    <body>
+      <div id="mainView">
+        <div class="header">
+          <h1>📊 ${this.escapeHtml(dag.dagId)}</h1>
+          <div class="actions">
+            <button onclick="showTriggerModal()">▶️ Trigger</button>
+            ${dag.paused ? 
+              '<button onclick="unpauseDag()">▶️ Unpause</button>' : 
+              '<button class="secondary" onclick="pauseDag()">⏸️ Pause</button>'}
+            <button class="secondary" onclick="refresh()">🔄 Refresh</button>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <h2>DAG Information</h2>
+            <div class="info-row">
+              <span class="label">Status</span>
+              <span class="status ${dag.paused ? 'paused' : 'active'}">${dag.paused ? '⏸️ Paused' : '▶️ Active'}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">Owner</span>
+              <span>${this.escapeHtml(dag.owner)}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">Schedule</span>
+              <span>${this.escapeHtml(dag.schedule || 'None')}</span>
+            </div>
+            <div class="info-row">
+              <span class="label">Tags</span>
+              <span>${dag.tags.map(t => `<span class="badge">${this.escapeHtml(t)}</span>`).join('') || 'None'}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tabs">
+          <button class="tab active" onclick="switchTab('tasks')">📋 Tasks (${tasks.length})</button>
+          <button class="tab" onclick="switchTab('runs')">🏃 DAG Runs</button>
+          <button class="tab" onclick="switchTab('code')">💻 Code</button>
+        </div>
+
+        <div id="tasksTab" class="tab-content active">
+          <div class="card">
+            <h2>Task Structure</h2>
+            ${tasks.length > 0 ? `
+              <table>
+                <thead>
+                  <tr><th>Task ID</th><th>Type</th><th>Downstream Tasks</th></tr>
+                </thead>
+                <tbody>
+                  ${tasks.map((t: any) => `
+                    <tr>
+                      <td>${this.escapeHtml(t.task_id)}</td>
+                      <td>${this.escapeHtml(t.task_type || t.operator_name || 'Task')}</td>
+                      <td>${(t.downstream_task_ids || []).join(', ') || '-'}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            ` : '<div class="empty">No task information available</div>'}
+          </div>
+        </div>
+
+        <div id="runsTab" class="tab-content">
+          <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+              <h2>Recent DAG Runs</h2>
+              <button class="small" onclick="loadDagRuns()">🔄 Load Runs</button>
+            </div>
+            <div id="runsContent" class="loading">Click "Load Runs" to view DAG runs</div>
+          </div>
+          <div id="tasksCard" class="card" style="display: none; margin-top: 15px;">
+            <h2>Task Instances</h2>
+            <div id="tasksContent"></div>
+          </div>
+        </div>
+
+        <div id="codeTab" class="tab-content">
+          <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+              <h2>DAG Source Code</h2>
+              <button onclick="viewSource()">📄 Load Code</button>
+            </div>
+            <div id="codeContent" class="empty">Click "Load Code" to view source</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="codeView">
+        <div class="header">
+          <h1>📄 ${this.escapeHtml(dag.dagId)} - Source Code</h1>
+          <div class="actions">
+            <button onclick="goBack()">⬅️ Back</button>
+            <button class="secondary" onclick="openInEditor('code')">📝 Open in Editor</button>
+          </div>
+        </div>
+        <div class="card">
+          <pre id="codeContent2"></pre>
+        </div>
+      </div>
+
+      <div id="logsView">
+        <div class="header">
+          <h1>📄 Task Logs</h1>
+          <div class="actions">
+            <button onclick="goBack()">⬅️ Back</button>
+            <button class="secondary" onclick="openInEditor('logs')">📝 Open in Editor</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2 id="logsTitle"></h2>
+          <pre id="logsContent"></pre>
+        </div>
+      </div>
+
+      <!-- Trigger Modal -->
+      <div id="triggerModal" class="modal">
+        <div class="modal-content">
+          <h3>Trigger DAG</h3>
+          <label>Configuration (JSON):</label>
+          <textarea id="triggerConf" rows="5" placeholder='{"key": "value"}'></textarea>
+          <div class="modal-actions">
+            <button onclick="triggerDag()">▶️ Trigger</button>
+            <button class="secondary" onclick="closeTriggerModal()">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Set State Modal -->
+      <div id="stateModal" class="modal">
+        <div class="modal-content">
+          <h3 id="stateModalTitle">Set State</h3>
+          <label>State:</label>
+          <select id="stateSelect">
+            <option value="success">Success</option>
+            <option value="failed">Failed</option>
+          </select>
+          <input type="hidden" id="stateType" />
+          <input type="hidden" id="stateDagRunId" />
+          <input type="hidden" id="stateTaskId" />
+          <div class="modal-actions">
+            <button onclick="setState()">✓ Set State</button>
+            <button class="secondary" onclick="closeStateModal()">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <script>
+        const vscode = acquireVsCodeApi();
+        let currentDagRunId = null;
+        
+        window.addEventListener('message', event => {
+          const msg = event.data;
+          if (msg.command === 'updateDagRuns') {
+            displayDagRuns(msg.runs);
+          } else if (msg.command === 'updateTasks') {
+            displayTasks(msg.tasks, msg.dagRunId);
+          } else if (msg.command === 'showCode') {
+            showCodeView(msg.source);
+          } else if (msg.command === 'showLogs') {
+            showLogsView(msg.logs, msg.taskId, msg.tryNumber);
+          }
+        });
+        
+        function switchTab(tab) {
+          document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+          event.target.classList.add('active');
+          document.getElementById(tab + 'Tab').classList.add('active');
+        }
+        
+        function loadDagRuns() {
+          document.getElementById('runsContent').innerHTML = '<div class="loading">Loading...</div>';
+          vscode.postMessage({ command: 'loadDagRuns' });
+        }
+        
+        function displayDagRuns(runs) {
+          if (!runs || runs.length === 0) {
+            document.getElementById('runsContent').innerHTML = '<div class="empty">No DAG runs found</div>';
+            return;
+          }
+          document.getElementById('runsContent').innerHTML = \`
+            <table>
+              <thead>
+                <tr><th>Run ID</th><th>State</th><th>Execution Date</th><th>Duration</th><th>Actions</th></tr>
+              </thead>
+              <tbody>
+                \${runs.map(run => \`
+                  <tr>
+                    <td>\${run.dagRunId}</td>
+                    <td><span class="status \${run.state}">\${run.state}</span></td>
+                    <td>\${new Date(run.executionDate).toLocaleString()}</td>
+                    <td>\${run.endDate && run.startDate ? 
+                      Math.round((new Date(run.endDate) - new Date(run.startDate)) / 1000) + 's' : '-'}</td>
+                    <td>
+                      <button class="small" onclick="loadTasks('\${run.dagRunId}')">View Tasks</button>
+                      <button class="small" onclick="showSetDagRunStateModal('\${run.dagRunId}')">Set State</button>
+                    </td>
+                  </tr>
+                \`).join('')}
+              </tbody>
+            </table>
+          \`;
+        }
+        
+        function loadTasks(dagRunId) {
+          currentDagRunId = dagRunId;
+          document.getElementById('tasksCard').style.display = 'block';
+          document.getElementById('tasksContent').innerHTML = '<div class="loading">Loading tasks...</div>';
+          vscode.postMessage({ command: 'loadTasks', dagRunId });
+        }
+        
+        function displayTasks(tasks, dagRunId) {
+          if (!tasks || tasks.length === 0) {
+            document.getElementById('tasksContent').innerHTML = '<div class="empty">No tasks found</div>';
+            return;
+          }
+          document.getElementById('tasksContent').innerHTML = \`
+            <table>
+              <thead>
+                <tr><th>Task ID</th><th>State</th><th>Try</th><th>Duration</th><th>Actions</th></tr>
+              </thead>
+              <tbody>
+                \${tasks.map(task => \`
+                  <tr>
+                    <td>\${task.taskId}</td>
+                    <td><span class="status \${task.state || 'none'}">\${task.state || 'none'}</span></td>
+                    <td>\${task.tryNumber}</td>
+                    <td>\${task.duration ? task.duration.toFixed(2) + 's' : '-'}</td>
+                    <td>
+                      <button class="small" onclick="viewLogs('\${dagRunId}', '\${task.taskId}', \${task.tryNumber})">📄 Logs</button>
+                      <button class="small" onclick="clearTask('\${dagRunId}', '\${task.taskId}')">🔄 Clear</button>
+                      <button class="small" onclick="showSetTaskStateModal('\${dagRunId}', '\${task.taskId}')">Set State</button>
+                    </td>
+                  </tr>
+                \`).join('')}
+              </tbody>
+            </table>
+          \`;
+        }
+        
+        function viewLogs(dagRunId, taskId, tryNumber) {
+          vscode.postMessage({ command: 'viewLogs', dagRunId, taskId, tryNumber });
+        }
+        
+        function clearTask(dagRunId, taskId) {
+          if (confirm('Clear task ' + taskId + '?')) {
+            vscode.postMessage({ command: 'clearTask', dagRunId, taskId });
+          }
+        }
+        
+        function showSetTaskStateModal(dagRunId, taskId) {
+          document.getElementById('stateModalTitle').textContent = 'Set Task State';
+          document.getElementById('stateType').value = 'task';
+          document.getElementById('stateDagRunId').value = dagRunId;
+          document.getElementById('stateTaskId').value = taskId;
+          document.getElementById('stateModal').classList.add('active');
+        }
+        
+        function showSetDagRunStateModal(dagRunId) {
+          document.getElementById('stateModalTitle').textContent = 'Set DAG Run State';
+          document.getElementById('stateType').value = 'dagrun';
+          document.getElementById('stateDagRunId').value = dagRunId;
+          document.getElementById('stateModal').classList.add('active');
+        }
+        
+        function setState() {
+          const type = document.getElementById('stateType').value;
+          const state = document.getElementById('stateSelect').value;
+          const dagRunId = document.getElementById('stateDagRunId').value;
+          
+          if (type === 'task') {
+            const taskId = document.getElementById('stateTaskId').value;
+            vscode.postMessage({ command: 'setTaskState', dagRunId, taskId, state });
+          } else {
+            vscode.postMessage({ command: 'setDagRunState', dagRunId, state });
+          }
+          closeStateModal();
+        }
+        
+        function closeStateModal() {
+          document.getElementById('stateModal').classList.remove('active');
+        }
+        
+        function showTriggerModal() {
+          document.getElementById('triggerModal').classList.add('active');
+        }
+        
+        function closeTriggerModal() {
+          document.getElementById('triggerModal').classList.remove('active');
+        }
+        
+        function triggerDag() {
+          const conf = document.getElementById('triggerConf').value;
+          vscode.postMessage({ command: 'trigger', conf });
+          closeTriggerModal();
+        }
+        
+        function viewSource() {
+          vscode.postMessage({ command: 'viewSource' });
+        }
+        
+        function showCodeView(source) {
+          document.getElementById('mainView').style.display = 'none';
+          document.getElementById('codeView').classList.add('active');
+          document.getElementById('codeContent2').textContent = source;
+        }
+        
+        function showLogsView(logs, taskId, tryNumber) {
+          document.getElementById('mainView').style.display = 'none';
+          document.getElementById('logsView').classList.add('active');
+          document.getElementById('logsTitle').textContent = \`Task: \${taskId} (Try #\${tryNumber})\`;
+          document.getElementById('logsContent').textContent = logs;
+        }
+        
+        function goBack() {
+          document.getElementById('mainView').style.display = 'block';
+          document.getElementById('codeView').classList.remove('active');
+          document.getElementById('logsView').classList.remove('active');
+          vscode.postMessage({ command: 'goBack' });
+        }
+        
+        function openInEditor(type) {
+          vscode.postMessage({ command: 'openInEditor', type });
+        }
+        
+        function pauseDag() { vscode.postMessage({ command: 'pause' }); }
+        function unpauseDag() { vscode.postMessage({ command: 'unpause' }); }
+        function refresh() { vscode.postMessage({ command: 'refresh' }); }
+      </script>
+    </body>
+    </html>`;
+  }
+
+  private escapeHtml(text: string): string {
+    const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+    return text.replace(/[&<>"']/g, m => map[m]);
+  }
+
+  private getErrorHtml(message: string): string {
+    return `<!DOCTYPE html><html><body><h1>Error</h1><p>${this.escapeHtml(message)}</p></body></html>`;
+  }
+
+  private dispose() {
+    DagDetailsPanel.panels.delete(this.dagId);
+    this.panel.dispose();
+    while (this.disposables.length) {
+      this.disposables.pop()?.dispose();
+    }
+  }
+}

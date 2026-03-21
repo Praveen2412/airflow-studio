@@ -19,6 +19,19 @@ export class Logger {
     return levels.indexOf(level) >= levels.indexOf(this.logLevel);
   }
 
+  private static safeStringify(obj: any): string {
+    const seen = new WeakSet();
+    return JSON.stringify(obj, (key, value) => {
+      if (typeof value === 'object' && value !== null) {
+        if (seen.has(value)) {
+          return '[Circular]';
+        }
+        seen.add(value);
+      }
+      return value;
+    });
+  }
+
   private static log(level: string, message: string, ...args: any[]) {
     if (!this.outputChannel) {
       console.log(`[Airflow ${level}] ${message}`, ...args);
@@ -26,7 +39,7 @@ export class Logger {
     }
 
     const timestamp = new Date().toISOString();
-    const formattedArgs = args.length > 0 ? ' ' + JSON.stringify(args) : '';
+    const formattedArgs = args.length > 0 ? ' ' + this.safeStringify(args) : '';
     const logMessage = `[${timestamp}] [${level}] ${message}${formattedArgs}`;
     
     this.outputChannel.appendLine(logMessage);
@@ -54,10 +67,12 @@ export class Logger {
   static error(message: string, error?: any, ...args: any[]) {
     if (this.shouldLog('error')) {
       const errorDetails = error ? {
-        message: error.message,
+        message: error.message || String(error),
         stack: error.stack,
         name: error.name,
-        ...error
+        code: error.code,
+        status: error.response?.status,
+        statusText: error.response?.statusText
       } : undefined;
       this.log('ERROR', message, errorDetails, ...args);
     }

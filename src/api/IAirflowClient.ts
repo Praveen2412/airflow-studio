@@ -6,6 +6,8 @@ export interface IAirflowClient {
   getDag(dagId: string): Promise<DagSummary>;
   pauseDag(dagId: string, paused: boolean): Promise<void>;
   deleteDag(dagId: string): Promise<void>;
+  getDagDetails(dagId: string): Promise<any>;
+  setDagRunState(dagId: string, dagRunId: string, state: string): Promise<void>;
   
   // DAG Run operations
   listDagRuns(dagId: string, limit?: number): Promise<DagRun[]>;
@@ -15,6 +17,7 @@ export interface IAirflowClient {
   listTaskInstances(dagId: string, dagRunId: string): Promise<TaskInstance[]>;
   getTaskLogs(dagId: string, taskId: string, dagRunId: string, tryNumber: number, mapIndex?: number): Promise<string>;
   clearTaskInstances(dagId: string, dagRunId: string, taskIds: string[], options?: ClearTaskOptions): Promise<void>;
+  setTaskInstanceState(dagId: string, dagRunId: string, taskId: string, state: string, mapIndex?: number): Promise<void>;
   
   // Variables
   listVariables(): Promise<Variable[]>;
@@ -36,6 +39,9 @@ export interface IAirflowClient {
   
   // Health
   getHealth(): Promise<HealthStatus>;
+  
+  // DAG Source
+  getDagSource(dagId: string): Promise<string>;
 }
 
 export interface ClearTaskOptions {

@@ -72,6 +72,12 @@ export class MwaaClient implements IAirflowClient {
     await http.delete(`/api/v1/dags/${dagId}`);
   }
 
+  async getDagDetails(dagId: string): Promise<any> {
+    const http = await this.ensureClient();
+    const response = await http.get<any>(`/api/v1/dags/${dagId}/details`);
+    return response;
+  }
+
   async listDagRuns(dagId: string, limit: number = 25): Promise<DagRun[]> {
     const http = await this.ensureClient();
     const response = await http.get<any>(`/api/v1/dags/${dagId}/dagRuns?limit=${limit}`);
@@ -259,5 +265,24 @@ export class MwaaClient implements IAirflowClient {
       triggerer: health.triggerer ? { status: health.triggerer.status } : undefined,
       dagProcessor: health.dag_processor ? { status: health.dag_processor.status } : undefined
     };
+  }
+
+  async getDagSource(dagId: string): Promise<string> {
+    const http = await this.ensureClient();
+    const response = await http.get<any>(`/api/v1/dagSources/${dagId}`);
+    return response.content || '';
+  }
+
+  async setTaskInstanceState(dagId: string, dagRunId: string, taskId: string, state: string, mapIndex?: number): Promise<void> {
+    const http = await this.ensureClient();
+    const url = mapIndex !== undefined 
+      ? `/api/v1/dags/${dagId}/dagRuns/${dagRunId}/taskInstances/${taskId}/${mapIndex}`
+      : `/api/v1/dags/${dagId}/dagRuns/${dagRunId}/taskInstances/${taskId}`;
+    await http.patch(url, { state });
+  }
+
+  async setDagRunState(dagId: string, dagRunId: string, state: string): Promise<void> {
+    const http = await this.ensureClient();
+    await http.patch(`/api/v1/dags/${dagId}/dagRuns/${dagRunId}`, { state });
   }
 }

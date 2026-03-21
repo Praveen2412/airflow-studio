@@ -11,7 +11,9 @@
   "engines": {
     "vscode": "^1.80.0"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Other"
+  ],
   "activationEvents": [
     "*"
   ],
@@ -20,7 +22,13 @@
     "commands": [
       {
         "command": "airflow.addServer",
-        "title": "Airflow: Add Server"
+        "title": "Airflow: Add Server",
+        "icon": "$(add)"
+      },
+      {
+        "command": "airflow.refreshServers",
+        "title": "Airflow: Refresh Servers",
+        "icon": "$(refresh)"
       },
       {
         "command": "airflow.editServer",
@@ -35,12 +43,26 @@
         "title": "Airflow: Test Server Connection"
       },
       {
+        "command": "airflow.openServerDetails",
+        "title": "Airflow: Open Server Details"
+      },
+      {
         "command": "airflow.refreshDags",
-        "title": "Airflow: Refresh DAGs"
+        "title": "Airflow: Refresh DAGs",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "airflow.refreshAdmin",
+        "title": "Airflow: Refresh Admin",
+        "icon": "$(refresh)"
       },
       {
         "command": "airflow.openDag",
         "title": "Airflow: Open DAG"
+      },
+      {
+        "command": "airflow.openDagDetails",
+        "title": "Airflow: Open DAG Details"
       },
       {
         "command": "airflow.triggerDag",
@@ -71,12 +93,24 @@
         "title": "Airflow: Open Variables"
       },
       {
+        "command": "airflow.openVariablesPanel",
+        "title": "Airflow: Open Variables Panel"
+      },
+      {
         "command": "airflow.openPools",
         "title": "Airflow: Open Pools"
       },
       {
+        "command": "airflow.openPoolsPanel",
+        "title": "Airflow: Open Pools Panel"
+      },
+      {
         "command": "airflow.openConnections",
         "title": "Airflow: Open Connections"
+      },
+      {
+        "command": "airflow.openConnectionsPanel",
+        "title": "Airflow: Open Connections Panel"
       },
       {
         "command": "airflow.openHealthCheck",
@@ -109,6 +143,23 @@
       ]
     },
     "menus": {
+      "view/title": [
+        {
+          "command": "airflow.refreshServers",
+          "when": "view == airflowServers",
+          "group": "navigation"
+        },
+        {
+          "command": "airflow.refreshDags",
+          "when": "view == airflowDags",
+          "group": "navigation"
+        },
+        {
+          "command": "airflow.refreshAdmin",
+          "when": "view == airflowAdmin",
+          "group": "navigation"
+        }
+      ],
       "view/item/context": [
         {
           "command": "airflow.editServer",
@@ -156,8 +207,9 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "axios": "^1.6.0",
     "@aws-sdk/client-mwaa": "^3.400.0",
-    "@aws-sdk/credential-providers": "^3.400.0"
+    "@aws-sdk/credential-providers": "^3.400.0",
+    "axios": "^1.6.0",
+    "vsce": "^2.15.0"
   }
 }

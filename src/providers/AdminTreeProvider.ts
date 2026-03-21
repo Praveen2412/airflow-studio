@@ -42,7 +42,7 @@ class AdminTreeItem extends vscode.TreeItem {
     this.contextValue = type;
     this.iconPath = new vscode.ThemeIcon(iconName);
     this.command = {
-      command: commandId ?? `airflow.open${label.replace(' ', '')}`,
+      command: commandId ?? `airflow.open${label.replace(' ', '')}Panel`,
       title: `Open ${label}`,
       arguments: []
     };

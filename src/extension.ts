@@ -3,6 +3,9 @@ import { ServerManager } from './managers/ServerManager';
 import { ServersTreeProvider } from './providers/ServersTreeProvider';
 import { DagsTreeProvider } from './providers/DagsTreeProvider';
 import { AdminTreeProvider } from './providers/AdminTreeProvider';
+import { ServerDetailsPanel } from './webviews/ServerDetailsPanel';
+import { DagDetailsPanel } from './webviews/DagDetailsPanel';
+import { VariablesPanel, PoolsPanel, ConnectionsPanel } from './webviews/AdminPanels';
 import { ServerProfile } from './models';
 import { Logger } from './utils/logger';
 
@@ -65,11 +68,15 @@ export function activate(context: vscode.ExtensionContext) {
     Logger.debug('Registering commands...');
     const commands = [
       { id: 'airflow.addServer', handler: addServer },
+      { id: 'airflow.refreshServers', handler: refreshServers },
       { id: 'airflow.editServer', handler: editServer },
       { id: 'airflow.deleteServer', handler: deleteServer },
       { id: 'airflow.testConnection', handler: testConnection },
+      { id: 'airflow.openServerDetails', handler: openServerDetails },
       { id: 'airflow.refreshDags', handler: refreshDags },
+      { id: 'airflow.refreshAdmin', handler: refreshAdmin },
       { id: 'airflow.openDag', handler: openDag },
+      { id: 'airflow.openDagDetails', handler: openDagDetails },
       { id: 'airflow.triggerDag', handler: triggerDag },
       { id: 'airflow.pauseDag', handler: pauseDag },
       { id: 'airflow.unpauseDag', handler: unpauseDag },
@@ -77,8 +84,11 @@ export function activate(context: vscode.ExtensionContext) {
       { id: 'airflow.clearTask', handler: clearTask },
       { id: 'airflow.viewLogs', handler: viewLogs },
       { id: 'airflow.openVariables', handler: openVariables },
+      { id: 'airflow.openVariablesPanel', handler: openVariablesPanel },
       { id: 'airflow.openPools', handler: openPools },
+      { id: 'airflow.openPoolsPanel', handler: openPoolsPanel },
       { id: 'airflow.openConnections', handler: openConnections },
+      { id: 'airflow.openConnectionsPanel', handler: openConnectionsPanel },
       { id: 'airflow.openHealthCheck', handler: openHealthCheck }
     ];
     
@@ -110,15 +120,29 @@ async function loadActiveServer() {
     Logger.debug('loadActiveServer: Starting...');
     const server = await serverManager.getActiveServer();
     if (server) {
-      Logger.info('Active server loaded:', { name: server.name, type: server.type });
+      Logger.info('Active server loaded:', { name: server.name, type: server.type, id: server.id });
       statusBarItem.text = `$(cloud) ${server.name}`;
-      dagsTreeProvider.loadDags();
+      await dagsTreeProvider.loadDags();
+      Logger.info('loadActiveServer: DAGs loaded');
     } else {
       Logger.debug('No active server found');
+      statusBarItem.text = '$(cloud) Airflow';
     }
   } catch (error: any) {
     Logger.error('Failed to load active server', error);
   }
+}
+
+async function refreshServers() {
+  Logger.info('=== USER ACTION: Refresh Servers ===');
+  serversTreeProvider.refresh();
+  vscode.window.showInformationMessage('Servers refreshed');
+}
+
+async function refreshAdmin() {
+  Logger.info('=== USER ACTION: Refresh Admin ===');
+  adminTreeProvider.refresh();
+  vscode.window.showInformationMessage('Admin view refreshed');
 }
 
 async function addServer() {
@@ -182,13 +206,40 @@ async function addServer() {
     await serverManager.addServer(profile, password);
     await serverManager.setActiveServer(profile.id);
     serversTreeProvider.refresh();
-    loadActiveServer();
+    await loadActiveServer();
     vscode.window.showInformationMessage(`Server ${name} added`);
-    Logger.info('addServer: Completed successfully');
+    Logger.info('addServer: Completed successfully', { serverId: profile.id });
   } catch (error: any) {
     Logger.error('addServer: Failed', error);
     vscode.window.showErrorMessage(`Failed to add server: ${error.message}`);
   }
+}
+
+async function openServerDetails(server: ServerProfile) {
+  Logger.info('openServerDetails: Command invoked', { serverId: server.id });
+  ServerDetailsPanel.show(server.id, serverManager, vscode.Uri.file(__dirname));
+}
+
+async function openDagDetails(dag: any) {
+  const dagId = dag?.dagId || dag?.dag?.dagId;
+  if (!dagId) return;
+  Logger.info('openDagDetails: Command invoked', { dagId });
+  DagDetailsPanel.show(dagId, serverManager, vscode.Uri.file(__dirname));
+}
+
+async function openVariablesPanel() {
+  Logger.info('openVariablesPanel: Command invoked');
+  VariablesPanel.show(serverManager, vscode.Uri.file(__dirname));
+}
+
+async function openPoolsPanel() {
+  Logger.info('openPoolsPanel: Command invoked');
+  PoolsPanel.show(serverManager, vscode.Uri.file(__dirname));
+}
+
+async function openConnectionsPanel() {
+  Logger.info('openConnectionsPanel: Command invoked');
+  ConnectionsPanel.show(serverManager, vscode.Uri.file(__dirname));
 }
 
 async function editServer(item: any) {
@@ -214,7 +265,10 @@ async function deleteServer(item: any) {
 }
 
 async function testConnection(item: any) {
+  Logger.info('=== USER ACTION: Test Connection ===');
   const serverId = item?.server?.id;
+  Logger.debug('testConnection: Input', { serverId });
+  
   if (!serverId) return;
 
   const result = await vscode.window.withProgress(
@@ -222,6 +276,8 @@ async function testConnection(item: any) {
     async () => await serverManager.testConnection(serverId)
   );
 
+  Logger.info('testConnection: Result', { success: result.success, message: result.message });
+  
   if (result.success) {
     vscode.window.showInformationMessage('✓ Connection successful');
   } else {
@@ -230,10 +286,12 @@ async function testConnection(item: any) {
 }
 
 async function refreshDags() {
+  Logger.info('=== USER ACTION: Refresh DAGs ===');
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: 'Refreshing DAGs...' },
     async () => await dagsTreeProvider.loadDags()
   );
+  Logger.info('refreshDags: Completed');
 }
 
 async function openDag(item: any) {
@@ -243,8 +301,10 @@ async function openDag(item: any) {
 }
 
 async function triggerDag(item: any) {
-  Logger.info('triggerDag: Command invoked');
+  Logger.info('=== USER ACTION: Trigger DAG ===');
   const dagId = item?.dag?.dagId;
+  Logger.debug('triggerDag: Input', { dagId, itemType: typeof item });
+  
   if (!dagId) {
     Logger.warn('triggerDag: No dagId provided');
     return;
@@ -264,9 +324,13 @@ async function triggerDag(item: any) {
     }
   });
 
-  if (confInput === undefined) return;
+  if (confInput === undefined) {
+    Logger.debug('triggerDag: User cancelled config input');
+    return;
+  }
 
   try {
+    Logger.debug('triggerDag: Getting client...');
     const client = await serverManager.getClient();
     if (!client) {
       Logger.error('triggerDag: No active server');
@@ -275,6 +339,7 @@ async function triggerDag(item: any) {
     }
 
     const conf = confInput ? JSON.parse(confInput) : undefined;
+    Logger.info('triggerDag: Calling API', { dagId, hasConfig: !!conf });
     await client.triggerDagRun(dagId, conf);
     vscode.window.showInformationMessage(`✓ DAG ${dagId} triggered`);
     Logger.info('triggerDag: Success', { dagId });
@@ -286,39 +351,54 @@ async function triggerDag(item: any) {
 }
 
 async function pauseDag(item: any) {
+  Logger.info('=== USER ACTION: Pause DAG ===');
   const dagId = item?.dag?.dagId;
+  Logger.debug('pauseDag: Input', { dagId });
+  
   if (!dagId) return;
 
   try {
     const client = await serverManager.getClient();
     if (!client) return;
 
+    Logger.info('pauseDag: Calling API', { dagId });
     await client.pauseDag(dagId, true);
     vscode.window.showInformationMessage(`✓ DAG ${dagId} paused`);
+    Logger.info('pauseDag: Success', { dagId });
     refreshDags();
   } catch (error: any) {
+    Logger.error('pauseDag: Failed', error, { dagId });
     vscode.window.showErrorMessage(`Failed to pause DAG: ${error.message}`);
   }
 }
 
 async function unpauseDag(item: any) {
+  Logger.info('=== USER ACTION: Unpause DAG ===');
   const dagId = item?.dag?.dagId;
+  Logger.debug('unpauseDag: Input', { dagId });
+  
   if (!dagId) return;
 
   try {
     const client = await serverManager.getClient();
     if (!client) return;
 
+    Logger.info('unpauseDag: Calling API', { dagId });
     await client.pauseDag(dagId, false);
     vscode.window.showInformationMessage(`✓ DAG ${dagId} unpaused`);
+    Logger.info('unpauseDag: Success', { dagId });
     refreshDags();
   } catch (error: any) {
+    Logger.error('unpauseDag: Failed', error, { dagId });
     vscode.window.showErrorMessage(`Failed to unpause DAG: ${error.message}`);
   }
 }
 
 async function deleteDag(item: any) {
+  Logger.info('=== USER ACTION: Delete DAG ===');
   const dagId = item?.dag?.dagId;
+  Logger.debug('deleteDag: Input', { dagId });
+  
   if (!dagId) return;
 
   const confirm = await vscode.window.showWarningMessage(
@@ -332,12 +412,17 @@ async function deleteDag(item: any) {
       const client = await serverManager.getClient();
       if (!client) return;
 
+      Logger.info('deleteDag: Calling API', { dagId });
       await client.deleteDag(dagId);
       vscode.window.showInformationMessage(`✓ DAG ${dagId} deleted`);
+      Logger.info('deleteDag: Success', { dagId });
       refreshDags();
     } catch (error: any) {
+      Logger.error('deleteDag: Failed', error, { dagId });
       vscode.window.showErrorMessage(`Failed to delete DAG: ${error.message}`);
     }
+  } else {
+    Logger.debug('deleteDag: User cancelled');
   }
 }
 

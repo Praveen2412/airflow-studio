@@ -1,6 +1,18 @@
 # Airflow VS Code Extension
 
-A lightweight VS Code extension for managing Apache Airflow environments directly from your IDE.
+A comprehensive VS Code extension for managing Apache Airflow environments directly from your IDE.
+
+## 🎉 Latest Release - v0.1.0
+
+✅ **Fully Implemented and Installed!**
+
+### New Features
+- 🔄 **Automatic API Version Detection** - Supports both Airflow 2.x (API v1) and 3.x (API v2)
+- ➕ **Inline Add Server Button** - Quick access from tree view
+- 📊 **Server Details Tab** - Click server to view health and connection info
+- 📈 **DAG Details Tab** - Click DAG to view runs and perform operations
+- ⚙️ **Admin Management Panels** - Full CRUD for Variables, Pools, Connections
+- 📝 **Comprehensive Logging** - All operations logged for debugging
 
 ## Project Status
 
