@@ -1,14 +1,18 @@
 import * as vscode from 'vscode';
 import { ServerProfile } from '../models';
 import { ServerManager } from '../managers/ServerManager';
+import { Logger } from '../utils/logger';
 
 export class ServersTreeProvider implements vscode.TreeDataProvider<ServerTreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<ServerTreeItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  constructor(private serverManager: ServerManager) {}
+  constructor(private serverManager: ServerManager) {
+    Logger.debug('ServersTreeProvider: Initialized');
+  }
 
   refresh(): void {
+    Logger.debug('ServersTreeProvider: Refreshing');
     this._onDidChangeTreeData.fire(undefined);
   }
 
@@ -18,7 +22,9 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<ServerTreeIt
 
   async getChildren(element?: ServerTreeItem): Promise<ServerTreeItem[]> {
     if (!element) {
+      Logger.debug('ServersTreeProvider.getChildren: Loading servers');
       const servers = await this.serverManager.getServers();
+      Logger.debug('ServersTreeProvider.getChildren: Loaded', { count: servers.length });
       return servers.map(s => new ServerTreeItem(s));
     }
     return [];

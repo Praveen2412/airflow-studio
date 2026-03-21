@@ -12,7 +12,9 @@
     "vscode": "^1.80.0"
   },
   "categories": ["Other"],
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "*"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -77,7 +79,7 @@
         "title": "Airflow: Open Connections"
       },
       {
-        "command": "airflow.openHealth",
+        "command": "airflow.openHealthCheck",
         "title": "Airflow: Open Health Check"
       }
     ],

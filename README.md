@@ -61,7 +61,17 @@ A lightweight VS Code extension for managing Apache Airflow environments directl
 
 **DAGs not loading**: Ensure server is active (check status bar), run `Airflow: Refresh DAGs`
 
-**Extension not working**: Check Output panel → "Extension Host", reload window
+**Extension not working**: 
+1. Open Output panel (`View` → `Output`)
+2. Select "Airflow Extension" from dropdown
+3. Check for error messages
+4. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed guide
+
+**Extension not activating**:
+1. Check logs: `View` → `Output` → "Airflow Extension"
+2. Check console: `Help` → `Toggle Developer Tools`
+3. Reload window: `Ctrl+Shift+P` → "Developer: Reload Window"
+4. See [DEBUGGING.md](DEBUGGING.md) for comprehensive debugging
 
 ## Usage
 
@@ -115,7 +125,9 @@ A lightweight VS Code extension for managing Apache Airflow environments directl
 1. Install dependencies: `npm install`
 2. Compile: `npm run compile`
 3. Watch mode: `npm run watch`
-4. Debug: Press F5
+4. Package: `vsce package`
+5. Install: `code --install-extension airflow-vscode-0.1.0.vsix`
+6. Debug: Press F5
 
 ### Project Structure
 ```
@@ -145,6 +157,8 @@ src/
 - [README.md](README.md) - Project overview and usage ✅
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Technical design and structure ✅
 - [TRACKER.md](TRACKER.md) - Implementation progress ✅
+- [DEBUGGING.md](DEBUGGING.md) - Comprehensive debugging guide ✅
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Quick troubleshooting reference ✅
 
 ## Security
 

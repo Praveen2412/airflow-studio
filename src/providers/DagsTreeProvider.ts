@@ -1,13 +1,16 @@
 import * as vscode from 'vscode';
 import { DagSummary } from '../models';
 import { ServerManager } from '../managers/ServerManager';
+import { Logger } from '../utils/logger';
 
 export class DagsTreeProvider implements vscode.TreeDataProvider<DagTreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<DagTreeItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
   private dags: DagSummary[] = [];
 
-  constructor(private serverManager: ServerManager) {}
+  constructor(private serverManager: ServerManager) {
+    Logger.debug('DagsTreeProvider: Initialized');
+  }
 
   refresh(): void {
     this._onDidChangeTreeData.fire(undefined);
@@ -15,12 +18,18 @@ export class DagsTreeProvider implements vscode.TreeDataProvider<DagTreeItem> {
 
   async loadDags(): Promise<void> {
     try {
+      Logger.debug('DagsTreeProvider.loadDags: Starting');
       const client = await this.serverManager.getClient();
       if (client) {
+        Logger.debug('DagsTreeProvider.loadDags: Client obtained, fetching DAGs');
         this.dags = await client.listDags();
+        Logger.info('DagsTreeProvider.loadDags: Success', { count: this.dags.length });
         this.refresh();
+      } else {
+        Logger.warn('DagsTreeProvider.loadDags: No client available');
       }
     } catch (error: any) {
+      Logger.error('DagsTreeProvider.loadDags: Failed', error);
       vscode.window.showErrorMessage(`Failed to load DAGs: ${error.message}`);
     }
   }

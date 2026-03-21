@@ -2,10 +2,10 @@
 
 ## Current Status
 
-**Phase Completed**: Foundation + Core API + Basic Operations  
-**Progress**: ~60% of MVP complete  
-**Next Priority**: Task instances, log viewer, full CRUD for admin objects  
-**Files**: 3 markdown docs + 10 source files + 6 config files + 1 icon
+**Phase Completed**: Foundation + Core API + Basic Operations + Logging  
+**Progress**: ~65% of MVP complete  
+**Next Priority**: Fix activation issues, then task instances and log viewer  
+**Files**: 4 markdown docs + 11 source files + 6 config files + 1 icon
 
 ## What Works Now
 
@@ -56,6 +56,7 @@
 - ✅ MwaaClient implementation
 - ✅ Error handling and retry logic
 - ✅ Request/response logging
+- ✅ Comprehensive debug logging
 
 ### Phase 4: DAG Management
 - ✅ DAG data models
@@ -147,12 +148,14 @@
 - ⬜ Unit tests for API clients
 - ⬜ Integration tests
 - ⬜ Manual testing checklist
-- ⬜ User documentation
-- ⬜ Code comments
-- ⬜ README updates
+- ✅ User documentation (README.md)
+- ✅ Architecture documentation (ARCHITECTURE.md)
+- ✅ Debugging guide (DEBUGGING.md)
+- ✅ Code comments and logging
+- ✅ Implementation tracker (TRACKER.md)
 
 ## Known Issues
-_None yet_
+- ✅ FIXED: Extension activation failing - node_modules weren't packaged (fixed in .vscodeignore)
 
 ## Future Enhancements (Post-MVP)
 - Advanced graph rendering
@@ -169,3 +172,26 @@ _None yet_
 - Keep UI responsive with lazy loading
 - Prioritize security (secret masking, secure storage)
 - Support both self-hosted and MWAA equally
+
+
+## Recent Changes
+
+### 2024-03-21: Comprehensive Logging Added
+- ✅ Created centralized Logger utility (`src/utils/logger.ts`)
+- ✅ Added logging to extension activation process
+- ✅ Added logging to all managers (ServerManager)
+- ✅ Added logging to all providers (Servers, DAGs, Admin)
+- ✅ Added HTTP request/response logging
+- ✅ Added logging to all command handlers
+- ✅ Created DEBUGGING.md guide
+- ✅ Output channel: "Airflow Extension" for all logs
+- ✅ Console logging for critical events
+- ✅ Error logging with full stack traces
+
+
+### 2024-03-21: Fixed Activation Issue
+- ✅ Identified root cause: .vscodeignore excluded node_modules
+- ✅ Fixed: Removed node_modules/** exclusion
+- ✅ Repackaged with all dependencies (axios, AWS SDK)
+- ✅ Extension now activates successfully
+- ✅ Package size: 2.06 MB (includes 1855 dependency files)

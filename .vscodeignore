@@ -6,6 +6,5 @@ tsconfig.json
 **/*.map
 **/*.ts
 !out/**/*.js
-node_modules/**
 logs/**
 .amazonq/**
