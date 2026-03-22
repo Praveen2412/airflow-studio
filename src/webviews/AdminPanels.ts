@@ -4,35 +4,35 @@ import { ServerManager } from '../managers/ServerManager';
 import { Logger } from '../utils/logger';
 
 const STYLES = `
-  body{padding:20px;font-family:var(--vscode-font-family);color:var(--vscode-foreground);background:var(--vscode-editor-background)}
-  h2{margin:0 0 15px}
-  button{padding:6px 14px;margin:3px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;cursor:pointer;border-radius:3px;font-size:13px}
+  body{padding:12px;font-family:var(--vscode-font-family);color:var(--vscode-foreground);background:var(--vscode-editor-background);font-size:12px}
+  h2{margin:0 0 10px;font-size:14px;font-weight:600}
+  button{padding:4px 10px;margin:2px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;cursor:pointer;border-radius:3px;font-size:11px}
   button:hover{background:var(--vscode-button-hoverBackground)}
-  button.small{padding:3px 8px;font-size:12px}
+  button.small{padding:2px 6px;font-size:10px}
   button.danger{background:#c0392b;color:white}
-  table{width:100%;border-collapse:collapse;margin-top:10px}
-  th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--vscode-panel-border);font-size:13px}
-  th{font-weight:600;background:var(--vscode-sideBar-background)}
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:11px}
+  th,td{padding:6px 8px;text-align:left;border-bottom:1px solid var(--vscode-panel-border)}
+  th{font-weight:600;background:var(--vscode-sideBar-background);font-size:10px;text-transform:uppercase;letter-spacing:0.5px}
   tr:hover{background:var(--vscode-list-hoverBackground)}
-  input,textarea{width:100%;padding:6px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);border-radius:3px;box-sizing:border-box;font-family:var(--vscode-font-family)}
-  label{display:block;margin:8px 0 4px;font-weight:600;font-size:13px}
-  #form{display:none;margin:15px 0;padding:15px;background:var(--vscode-sideBar-background);border-radius:5px;border:1px solid var(--vscode-panel-border)}
-  .row{margin-top:12px;display:flex;gap:8px}
+  input,textarea{width:100%;padding:5px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);border-radius:3px;box-sizing:border-box;font-family:var(--vscode-font-family);font-size:11px}
+  label{display:block;margin:6px 0 3px;font-weight:600;font-size:11px}
+  #form{display:none;margin:10px 0;padding:10px;background:var(--vscode-sideBar-background);border-radius:4px;border:1px solid var(--vscode-panel-border)}
+  .row{margin-top:8px;display:flex;gap:6px}
 `;
 
 function page(title: string, tableHead: string, rows: string, formBody: string, script: string): string {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>${STYLES}</style></head><body>
 <h2>${title}</h2>
-<div style="margin-bottom:10px">
-  <button id="btnCreate">&#x2795; Create</button>
-  <button id="btnRefresh">&#x1F504; Refresh</button>
+<div style="margin-bottom:8px">
+  <button id="btnCreate" title="Create new ${title.toLowerCase().slice(0,-1)}">Create</button>
+  <button id="btnRefresh" title="Refresh ${title.toLowerCase()} list">🔄 Refresh</button>
 </div>
 <div id="form">
-  <h3 id="formTitle">Create</h3>
+  <h3 id="formTitle" style="font-size:12px;margin-bottom:8px">Create</h3>
   <input type="hidden" id="editMode" value="false">
   ${formBody}
   <div class="row">
-    <button id="btnSave">&#x1F4BE; Save</button>
+    <button id="btnSave">💾 Save</button>
     <button id="btnCancel">Cancel</button>
   </div>
 </div>
@@ -46,8 +46,27 @@ function page(title: string, tableHead: string, rows: string, formBody: string, 
   document.getElementById('btnRefresh').addEventListener('click', function(){ vscode.postMessage({command:'refresh'}); });
   document.getElementById('btnCancel').addEventListener('click', function(){ document.getElementById('form').style.display='none'; });
   ${script}
-  // Delegated click for table action buttons
-  document.getElementById('tbody').addEventListener('click', function(e){
+  window.handleAction = function(btn, vs){
+    const action = btn.dataset.action;
+    if(action === 'delete'){
+      if(btn.dataset.key){
+        if(confirm('Delete variable "' + btn.dataset.key + '"?')){
+          vs.postMessage({command:'delete', key: btn.dataset.key});
+        }
+      } else if(btn.dataset.name){
+        if(confirm('Delete pool "' + btn.dataset.name + '"?')){
+          vs.postMessage({command:'delete', name: btn.dataset.name});
+        }
+      } else if(btn.dataset.id){
+        if(confirm('Delete connection "' + btn.dataset.id + '"?')){
+          vs.postMessage({command:'delete', connectionId: btn.dataset.id});
+        }
+      }
+    } else if(action === 'edit'){
+      handleEdit(btn);
+    }
+  };
+  document.addEventListener('click', function(e){
     const btn = e.target.closest('[data-action]');
     if(!btn) return;
     handleAction(btn, vscode);
@@ -118,8 +137,8 @@ export class VariablesPanel {
         <td title="${esc(v.value)}">${esc(v.value.substring(0,60))}${v.value.length>60?'...':''}</td>
         <td>${esc(v.description||'')}</td>
         <td>
-          <button class="small" data-action="edit" data-key="${attr(v.key)}" data-value="${attr(v.value)}" data-desc="${attr(v.description||'')}">&#x270F;&#xFE0F; Edit</button>
-          <button class="small danger" data-action="delete" data-key="${attr(v.key)}">&#x1F5D1;&#xFE0F; Delete</button>
+          <button class="small" data-action="edit" data-key="${attr(v.key)}" data-value="${attr(v.value)}" data-desc="${attr(v.description||'')}" title="Edit this variable">Edit</button>
+          <button class="small danger" data-action="delete" data-key="${attr(v.key)}" title="Delete this variable">Delete</button>
         </td>
       </tr>`).join('');
 
@@ -149,22 +168,15 @@ export class VariablesPanel {
         });
         document.getElementById('form').style.display = 'none';
       });
-      function handleAction(btn, vscode){
-        const action = btn.dataset.action;
-        if(action === 'delete'){
-          if(confirm('Delete variable "' + btn.dataset.key + '"?')){
-            vscode.postMessage({command:'delete', key: btn.dataset.key});
-          }
-        } else if(action === 'edit'){
-          document.getElementById('formTitle').textContent = 'Edit Variable';
-          document.getElementById('editMode').value = 'true';
-          document.getElementById('fKey').value = btn.dataset.key;
-          document.getElementById('fKey').disabled = true;
-          document.getElementById('fValue').value = btn.dataset.value;
-          document.getElementById('fDesc').value = btn.dataset.desc;
-          document.getElementById('form').style.display = 'block';
-        }
-      }`;
+      window.handleEdit = function(btn){
+        document.getElementById('formTitle').textContent = 'Edit Variable';
+        document.getElementById('editMode').value = 'true';
+        document.getElementById('fKey').value = btn.dataset.key;
+        document.getElementById('fKey').disabled = true;
+        document.getElementById('fValue').value = btn.dataset.value;
+        document.getElementById('fDesc').value = btn.dataset.desc;
+        document.getElementById('form').style.display = 'block';
+      };`;
 
     return page('Variables',
       '<tr><th>Key</th><th>Value</th><th>Description</th><th>Actions</th></tr>',
@@ -229,8 +241,8 @@ export class PoolsPanel {
         <td>${p.slots}</td><td>${p.occupiedSlots}</td><td>${p.runningSlots}</td><td>${p.queuedSlots}</td>
         <td>${esc(p.description||'')}</td>
         <td>
-          <button class="small" data-action="edit" data-name="${attr(p.name)}" data-slots="${p.slots}" data-desc="${attr(p.description||'')}">&#x270F;&#xFE0F; Edit</button>
-          <button class="small danger" data-action="delete" data-name="${attr(p.name)}">&#x1F5D1;&#xFE0F; Delete</button>
+          <button class="small" data-action="edit" data-name="${attr(p.name)}" data-slots="${p.slots}" data-desc="${attr(p.description||'')}" title="Edit this pool">Edit</button>
+          <button class="small danger" data-action="delete" data-name="${attr(p.name)}" title="Delete this pool">Delete</button>
         </td>
       </tr>`).join('');
 
@@ -260,22 +272,15 @@ export class PoolsPanel {
         });
         document.getElementById('form').style.display = 'none';
       });
-      function handleAction(btn, vscode){
-        const action = btn.dataset.action;
-        if(action === 'delete'){
-          if(confirm('Delete pool "' + btn.dataset.name + '"?')){
-            vscode.postMessage({command:'delete', name: btn.dataset.name});
-          }
-        } else if(action === 'edit'){
-          document.getElementById('formTitle').textContent = 'Edit Pool';
-          document.getElementById('editMode').value = 'true';
-          document.getElementById('fName').value = btn.dataset.name;
-          document.getElementById('fName').disabled = true;
-          document.getElementById('fSlots').value = btn.dataset.slots;
-          document.getElementById('fDesc').value = btn.dataset.desc;
-          document.getElementById('form').style.display = 'block';
-        }
-      }`;
+      window.handleEdit = function(btn){
+        document.getElementById('formTitle').textContent = 'Edit Pool';
+        document.getElementById('editMode').value = 'true';
+        document.getElementById('fName').value = btn.dataset.name;
+        document.getElementById('fName').disabled = true;
+        document.getElementById('fSlots').value = btn.dataset.slots;
+        document.getElementById('fDesc').value = btn.dataset.desc;
+        document.getElementById('form').style.display = 'block';
+      };`;
 
     return page('Pools',
       '<tr><th>Name</th><th>Slots</th><th>Occupied</th><th>Running</th><th>Queued</th><th>Description</th><th>Actions</th></tr>',
@@ -351,8 +356,8 @@ export class ConnectionsPanel {
             data-id="${attr(c.connectionId)}" data-type="${attr(c.connType)}"
             data-host="${attr(c.host||'')}" data-schema="${attr(c.schema||'')}"
             data-login="${attr(c.login||'')}" data-port="${c.port||''}"
-            data-extra="${attr(c.extra||'')}">&#x270F;&#xFE0F; Edit</button>
-          <button class="small danger" data-action="delete" data-id="${attr(c.connectionId)}">&#x1F5D1;&#xFE0F; Delete</button>
+            data-extra="${attr(c.extra||'')}" title="Edit this connection">Edit</button>
+          <button class="small danger" data-action="delete" data-id="${attr(c.connectionId)}" title="Delete this connection">Delete</button>
         </td>
       </tr>`).join('');
 
@@ -391,26 +396,19 @@ export class ConnectionsPanel {
         });
         document.getElementById('form').style.display = 'none';
       });
-      function handleAction(btn, vscode){
-        const action = btn.dataset.action;
-        if(action === 'delete'){
-          if(confirm('Delete connection "' + btn.dataset.id + '"?')){
-            vscode.postMessage({command:'delete', connectionId: btn.dataset.id});
-          }
-        } else if(action === 'edit'){
-          document.getElementById('formTitle').textContent = 'Edit Connection';
-          document.getElementById('editMode').value = 'true';
-          document.getElementById('fId').value = btn.dataset.id;
-          document.getElementById('fId').disabled = true;
-          document.getElementById('fType').value = btn.dataset.type;
-          document.getElementById('fHost').value = btn.dataset.host;
-          document.getElementById('fSchema').value = btn.dataset.schema;
-          document.getElementById('fLogin').value = btn.dataset.login;
-          document.getElementById('fPort').value = btn.dataset.port;
-          document.getElementById('fExtra').value = btn.dataset.extra;
-          document.getElementById('form').style.display = 'block';
-        }
-      }`;
+      window.handleEdit = function(btn){
+        document.getElementById('formTitle').textContent = 'Edit Connection';
+        document.getElementById('editMode').value = 'true';
+        document.getElementById('fId').value = btn.dataset.id;
+        document.getElementById('fId').disabled = true;
+        document.getElementById('fType').value = btn.dataset.type;
+        document.getElementById('fHost').value = btn.dataset.host;
+        document.getElementById('fSchema').value = btn.dataset.schema;
+        document.getElementById('fLogin').value = btn.dataset.login;
+        document.getElementById('fPort').value = btn.dataset.port;
+        document.getElementById('fExtra').value = btn.dataset.extra;
+        document.getElementById('form').style.display = 'block';
+      };`;
 
     return page('Connections',
       '<tr><th>ID</th><th>Type</th><th>Host</th><th>Schema</th><th>Login</th><th>Port</th><th>Actions</th></tr>',

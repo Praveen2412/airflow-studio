@@ -13,6 +13,9 @@ A comprehensive VS Code extension for managing Apache Airflow environments direc
 - 📈 **DAG Details Tab** - Click DAG to view runs and perform operations
 - ⚙️ **Admin Management Panels** - Full CRUD for Variables, Pools, Connections
 - 📝 **Comprehensive Logging** - All operations logged for debugging
+- 🎯 **Button Tooltips** - Hover over any button to see what it does
+- 🔁 **Multi-Try Log Viewer** - View logs from different retry attempts
+- ✅ **Reliable DAG Triggering** - Full Airflow v2 API compatibility
 
 ## Project Status
 

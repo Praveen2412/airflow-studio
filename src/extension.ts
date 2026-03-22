@@ -3,7 +3,7 @@ import { ServerManager } from './managers/ServerManager';
 import { ServersTreeProvider } from './providers/ServersTreeProvider';
 import { DagsTreeProvider } from './providers/DagsTreeProvider';
 import { AdminTreeProvider } from './providers/AdminTreeProvider';
-import { ServerDetailsPanel } from './webviews/ServerDetailsPanel';
+import { ServerDetailsPanel, showAddServerPanel } from './webviews/ServerDetailsPanel';
 import { DagDetailsPanel } from './webviews/DagDetailsPanel';
 import { VariablesPanel, PoolsPanel, ConnectionsPanel } from './webviews/AdminPanels';
 import { ServerProfile } from './models';
@@ -68,6 +68,7 @@ export function activate(context: vscode.ExtensionContext) {
     Logger.debug('Registering commands...');
     const commands = [
       { id: 'airflow.addServer', handler: addServer },
+      { id: 'airflow.addServerPanel', handler: addServerPanel },
       { id: 'airflow.refreshServers', handler: refreshServers },
       { id: 'airflow.editServer', handler: editServer },
       { id: 'airflow.deleteServer', handler: deleteServer },
@@ -143,6 +144,11 @@ async function refreshAdmin() {
   Logger.info('=== USER ACTION: Refresh Admin ===');
   adminTreeProvider.refresh();
   vscode.window.showInformationMessage('Admin view refreshed');
+}
+
+async function addServerPanel() {
+  Logger.info('addServerPanel: Command invoked');
+  showAddServerPanel(serverManager, vscode.Uri.file(__dirname));
 }
 
 async function addServer() {

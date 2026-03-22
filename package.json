@@ -22,6 +22,11 @@
     "commands": [
       {
         "command": "airflow.addServer",
+        "title": "Airflow: Add Server (Quick)",
+        "icon": "$(add)"
+      },
+      {
+        "command": "airflow.addServerPanel",
         "title": "Airflow: Add Server",
         "icon": "$(add)"
       },

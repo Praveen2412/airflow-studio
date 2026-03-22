@@ -39,7 +39,7 @@ class AddServerTreeItem extends vscode.TreeItem {
     super('➕ Add Server', vscode.TreeItemCollapsibleState.None);
     this.contextValue = 'addServer';
     this.command = {
-      command: 'airflow.addServer',
+      command: 'airflow.addServerPanel',
       title: 'Add Server'
     };
     this.iconPath = new vscode.ThemeIcon('add');

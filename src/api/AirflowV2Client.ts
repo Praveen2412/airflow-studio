@@ -106,9 +106,10 @@ export class AirflowV2Client implements IAirflowClient {
 
   async triggerDagRun(dagId: string, conf?: any, logicalDate?: string): Promise<DagRun> {
     try {
-      const payload: any = {};
+      const payload: any = {
+        logical_date: logicalDate || new Date().toISOString()
+      };
       if (conf) payload.conf = conf;
-      if (logicalDate) payload.logical_date = logicalDate;
       
       const run = await this.http.post<any>(`/api/v2/dags/${dagId}/dagRuns`, payload);
       Logger.info('AirflowV2Client.triggerDagRun: Success', { dagId });
