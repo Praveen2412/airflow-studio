@@ -1,304 +1,200 @@
-# Testing Guide - Verify All Fixes
-
-## Prerequisites
-1. Reload VS Code window: `Ctrl+Shift+P` → "Developer: Reload Window"
-2. Ensure you have an active Airflow server connection
-3. Have at least one DAG available for testing
-
-## Test 1: Task Structure Loading ✅
-
-**Steps:**
-1. Open Airflow sidebar
-2. Click on any DAG to open DAG Details panel
-3. Verify the "Tasks" tab is active by default
-4. Check if task structure table is displayed
-
-**Expected Result:**
-- ✅ Task structure table shows with columns: Task ID, Type, Downstream Tasks
-- ✅ If no tasks available, shows: "No task structure available. Switch to DAG Runs tab to view task instances."
-- ✅ Tasks are displayed immediately without manual refresh
-
-**Before Fix:** Showed "No task structure available" even when tasks existed
-**After Fix:** Tasks display correctly from DAG details
-
----
-
-## Test 2: DAG Run Operations ✅
-
-**Steps:**
-1. In DAG Details panel, click "DAG Runs" tab
-2. Click "🔄 Load" button to load recent runs
-3. For any run, test these buttons:
-   - Click "📋" (Tasks button) to load task instances
-   - Click "✓" (Success button) to mark run as success
-   - Click "✗" (Failed button) to mark run as failed
-
-**Expected Result:**
-- ✅ Tasks button loads task instances in a new card below
-- ✅ Success button prompts confirmation, then marks run as success
-- ✅ Failed button prompts confirmation, then marks run as failed
-- ✅ After state change, runs list auto-refreshes
-
-**Before Fix:** Success/Failed buttons were not working
-**After Fix:** All buttons work correctly with proper confirmation
-
----
-
-## Test 3: Task Instance Operations ✅
-
-**Steps:**
-1. Load task instances for a DAG run (see Test 2)
-2. For any task, test these actions:
-   - Click "📄" (Logs button) to view task logs
-   - Click "🔄" (Clear button) to clear task instance
-   - Use dropdown "Set..." to change task state (Success/Failed/Skipped)
-
-**Expected Result:**
-- ✅ Logs button displays task logs in inline view
-- ✅ Clear button prompts confirmation, then clears task
-- ✅ State dropdown prompts confirmation, then updates task state
-- ✅ After operations, task list auto-refreshes
-
-**Before Fix:** Set state dropdown was not working
-**After Fix:** All task operations work correctly
-
----
-
-## Test 4: Variables Panel ✅
-
-**Steps:**
-1. Open Command Palette: `Ctrl+Shift+P`
-2. Run: "Airflow: Open Variables"
-3. Test CRUD operations:
-   - Click "➕ Create" → Fill form → Click "💾 Save"
-   - Click "✏ Edit" on any variable → Modify → Save
-   - Click "🗑 Delete" on any variable → Confirm
-
-**Expected Result:**
-- ✅ Create button opens form, save creates new variable
-- ✅ Edit button opens form with pre-filled data, save updates variable
-- ✅ Delete button prompts confirmation, then deletes variable
-- ✅ After each operation, list auto-refreshes
-
-**Before Fix:** Edit and Delete buttons were not responding
-**After Fix:** All CRUD operations work perfectly
-
----
-
-## Test 5: Pools Panel ✅
-
-**Steps:**
-1. Open Command Palette: `Ctrl+Shift+P`
-2. Run: "Airflow: Open Pools"
-3. Test CRUD operations:
-   - Click "➕ Create" → Fill form (name, slots) → Save
-   - Click "✏ Edit" on any pool → Modify slots → Save
-   - Click "🗑 Delete" on any pool → Confirm
-
-**Expected Result:**
-- ✅ Create button opens form, save creates new pool
-- ✅ Edit button opens form with pre-filled data, save updates pool
-- ✅ Delete button prompts confirmation, then deletes pool
-- ✅ After each operation, list auto-refreshes
-
-**Before Fix:** Edit and Delete buttons were not responding
-**After Fix:** All CRUD operations work perfectly
-
----
-
-## Test 6: Connections Panel ✅
-
-**Steps:**
-1. Open Command Palette: `Ctrl+Shift+P`
-2. Run: "Airflow: Open Connections"
-3. Test CRUD operations:
-   - Click "➕ Create" → Fill form (ID, type, host, etc.) → Save
-   - Click "✏ Edit" on any connection → Modify → Save
-   - Click "🗑 Delete" on any connection → Confirm
-
-**Expected Result:**
-- ✅ Create button opens form, save creates new connection
-- ✅ Edit button opens form with pre-filled data, save updates connection
-- ✅ Delete button prompts confirmation, then deletes connection
-- ✅ After each operation, list auto-refreshes
-
-**Before Fix:** Edit and Delete buttons were not responding
-**After Fix:** All CRUD operations work perfectly
-
----
-
-## Test 7: UI Improvements ✅
-
-**Visual Inspection:**
-1. Open any panel (DAG Details, Variables, Pools, Connections)
-2. Verify the following improvements:
-
-**Spacing:**
-- ✅ More compact padding (12px instead of 20px)
-- ✅ Tighter button spacing (6px gaps instead of 8px)
-- ✅ Smaller table cell padding (6x8px instead of 8x10px)
-
-**Typography:**
-- ✅ Smaller, more refined font sizes (11-12px body text)
-- ✅ Table headers are UPPERCASE with letter-spacing
-- ✅ Better visual hierarchy
-
-**Icons:**
-- ✅ Icons are smaller and cleaner (single Unicode chars)
-- ✅ Icon-only buttons in action columns (📋, ✏, 🗑, ✓, ✗)
-- ✅ Tooltips show on hover for all buttons
-
-**Layout:**
-- ✅ More content visible without scrolling (10-15% improvement)
-- ✅ Sharper corners (4px border-radius instead of 6px)
-- ✅ Refined borders (2px instead of 3px)
-
----
-
-## Test 8: Trigger DAG Auto-Switch ✅
-
-**Steps:**
-1. Open DAG Details panel
-2. Click "▶ Trigger" button
-3. Optionally enter JSON config
-4. Click "▶ Trigger DAG"
-
-**Expected Result:**
-- ✅ DAG is triggered successfully
-- ✅ Panel automatically switches to "DAG Runs" tab
-- ✅ Success message appears
-- ✅ After 1 second, DAG runs list auto-refreshes
-
-**Before Fix:** Stayed on current tab after trigger
-**After Fix:** Auto-switches to DAG Runs tab for immediate feedback
-
----
-
-## Test 9: Multi-Try Log Viewer ✅
-
-**Steps:**
-1. Find a task that has been retried (try_number > 1)
-2. Click "📄" (Logs button) on that task
-3. Verify the try selector dropdown appears
-4. Select different try numbers from dropdown
-
-**Expected Result:**
-- ✅ Try selector shows "Try 1", "Try 2", etc.
-- ✅ Latest try is marked with "(latest)"
-- ✅ Selecting different tries loads corresponding logs
-- ✅ Current try is pre-selected
-
----
-
-## Test 10: Tooltips & Accessibility ✅
-
-**Steps:**
-1. Hover over each button in all panels
-2. Verify tooltips appear with descriptive text
-
-**Expected Tooltips:**
-- ✅ "Trigger DAG with optional configuration"
-- ✅ "Pause DAG execution" / "Resume DAG execution"
-- ✅ "View DAG source code"
-- ✅ "Refresh DAG details"
-- ✅ "View task instances for this run"
-- ✅ "Mark run as success"
-- ✅ "Mark run as failed"
-- ✅ "View task logs"
-- ✅ "Clear task instance to re-run"
-- ✅ "Manually set task state"
-- ✅ "Edit this variable/pool/connection"
-- ✅ "Delete this variable/pool/connection"
-
----
-
-## Regression Testing ✅
-
-**Verify existing features still work:**
-1. ✅ Server management (add, edit, switch, delete)
-2. ✅ DAG listing in sidebar
-3. ✅ DAG pause/unpause from context menu
-4. ✅ DAG delete from context menu
-5. ✅ Health check panel
-6. ✅ Server details panel
-7. ✅ Status bar shows active server
-8. ✅ Logging to Output panel
-
----
-
-## Performance Testing ✅
-
-**Verify performance improvements:**
-1. ✅ Panels load faster (smaller HTML payload)
-2. ✅ Scrolling is smooth (less DOM complexity)
-3. ✅ No console errors in Developer Tools
-4. ✅ Memory usage is stable
-
----
-
-## Browser Console Check ✅
-
-**Steps:**
-1. Open Developer Tools: `Help` → `Toggle Developer Tools`
-2. Go to Console tab
-3. Perform various operations
-4. Check for errors
-
-**Expected Result:**
-- ✅ No JavaScript errors
-- ✅ No warning messages
-- ✅ Console logs show proper command execution
-
----
-
-## Summary Checklist
-
-- [ ] Task structure loads automatically
-- [ ] DAG run state buttons work (Success/Failed)
-- [ ] Task state dropdown works
-- [ ] Task clear button works
-- [ ] Variables CRUD works (Create, Edit, Delete)
-- [ ] Pools CRUD works (Create, Edit, Delete)
-- [ ] Connections CRUD works (Create, Edit, Delete)
-- [ ] UI is more compact and elegant
-- [ ] Icons are smaller and cleaner
-- [ ] Tooltips display correctly
-- [ ] Auto-switch to DAG Runs after trigger
-- [ ] Multi-try log viewer works
-- [ ] No console errors
-- [ ] All existing features still work
-
----
+# Testing Guide - Debug Buttons and Logging
+
+## How to See Logs
+
+### 1. VS Code Output Panel (Extension Logs)
+- Open: `View` → `Output` (or `Ctrl+Shift+U`)
+- Select: **"Airflow Extension"** from dropdown
+- Shows: Backend TypeScript logs from `Logger.info()`, `Logger.error()`, etc.
+
+### 2. Browser DevTools (Webview Logs)
+- Open: `Help` → `Toggle Developer Tools` (or `Ctrl+Shift+I`)
+- Go to: **Console** tab
+- Filter: Type `[Airflow]` in the filter box
+- Shows: Frontend JavaScript logs from `console.log('[Airflow] ...')`
+
+## What to Test
+
+### Test 1: Delete Variable Button
+1. Open Variables panel: `Ctrl+Shift+P` → "Airflow: Open Variables"
+2. Click **Delete** button on any variable
+3. **Expected logs in DevTools Console**:
+   ```
+   [Airflow] Click event on button with action: delete
+   [Airflow] Button clicked: delete {action: "delete", key: "my_var"}
+   [Airflow] Deleting variable: my_var
+   [Airflow] Sending delete message for variable
+   ```
+4. **Expected logs in Output Panel**:
+   ```
+   [INFO] VariablesPanel.handleMessage { command: 'delete', key: 'my_var' }
+   [INFO] VariablesPanel: Deleting variable { key: 'my_var' }
+   [INFO] AirflowStableClient.deleteVariable: Success { key: 'my_var' }
+   [INFO] VariablesPanel: Variable deleted { key: 'my_var' }
+   ```
+5. **Expected UI**: Variable should disappear from list
+
+### Test 2: Delete Pool Button
+1. Open Pools panel: `Ctrl+Shift+P` → "Airflow: Open Pools"
+2. Click **Delete** button on any pool
+3. **Expected logs in DevTools Console**:
+   ```
+   [Airflow] Click event on button with action: delete
+   [Airflow] Button clicked: delete {action: "delete", name: "my_pool"}
+   [Airflow] Deleting pool: my_pool
+   [Airflow] Sending delete message for pool
+   ```
+4. **Expected logs in Output Panel**:
+   ```
+   [INFO] PoolsPanel.handleMessage { command: 'delete', name: 'my_pool' }
+   [INFO] PoolsPanel: Deleting pool { name: 'my_pool' }
+   [INFO] AirflowStableClient.deletePool: Success { name: 'my_pool' }
+   [INFO] PoolsPanel: Pool deleted { name: 'my_pool' }
+   ```
+
+### Test 3: Delete Connection Button
+1. Open Connections panel: `Ctrl+Shift+P` → "Airflow: Open Connections"
+2. Click **Delete** button on any connection
+3. **Expected logs in DevTools Console**:
+   ```
+   [Airflow] Click event on button with action: delete
+   [Airflow] Button clicked: delete {action: "delete", id: "my_conn"}
+   [Airflow] Deleting connection: my_conn
+   [Airflow] Sending delete message for connection
+   ```
+4. **Expected logs in Output Panel**:
+   ```
+   [INFO] ConnectionsPanel.handleMessage { command: 'delete', connectionId: 'my_conn' }
+   [INFO] ConnectionsPanel: Deleting connection { connectionId: 'my_conn' }
+   [INFO] AirflowStableClient.deleteConnection: Success { connectionId: 'my_conn' }
+   [INFO] ConnectionsPanel: Connection deleted { connectionId: 'my_conn' }
+   ```
+
+### Test 4: Set DAG Run State
+1. Open DAG Details: Click on any DAG in tree view
+2. Go to **DAG Runs** tab
+3. Click **Load** button to load runs
+4. Click **✓** (success) or **✗** (failed) button on any run
+5. **Expected logs in DevTools Console**:
+   ```
+   [Airflow] DAG Details button clicked: run-success {action: "run-success", runId: "manual__2024-01-01"}
+   [Airflow] Setting DAG run to success: manual__2024-01-01
+   [Airflow] Sending setDagRunState message
+   ```
+6. **Expected logs in Output Panel**:
+   ```
+   [INFO] DagDetailsPanel.handleMessage { command: 'setDagRunState', dagId: 'my_dag' }
+   [INFO] DagDetailsPanel: Setting DAG run state { dagId: 'my_dag', dagRunId: 'manual__2024-01-01', state: 'success' }
+   [INFO] AirflowStableClient.setDagRunState: Success { dagId: 'my_dag', dagRunId: 'manual__2024-01-01', state: 'success' }
+   [INFO] DagDetailsPanel: DAG run state set successfully { dagId: 'my_dag', dagRunId: 'manual__2024-01-01', state: 'success' }
+   ```
+
+### Test 5: Set Task State
+1. Open DAG Details: Click on any DAG
+2. Go to **DAG Runs** tab, click **Load**
+3. Click **📋** button on a run to load tasks
+4. Use the **Set...** dropdown on any task
+5. Select **✓ Success**, **✗ Failed**, or **⏭ Skipped**
+6. **Expected logs in DevTools Console**:
+   ```
+   [Airflow] Task state dropdown changed: success {action: "set-task-state", runId: "manual__2024-01-01", taskId: "my_task"}
+   [Airflow] Sending setTaskState message
+   ```
+7. **Expected logs in Output Panel**:
+   ```
+   [INFO] DagDetailsPanel.handleMessage { command: 'setTaskState', dagId: 'my_dag' }
+   [INFO] DagDetailsPanel: Setting task state { dagId: 'my_dag', dagRunId: 'manual__2024-01-01', taskId: 'my_task', state: 'success' }
+   [INFO] AirflowStableClient.setTaskInstanceState: Success { dagId: 'my_dag', taskId: 'my_task', state: 'success' }
+   [INFO] DagDetailsPanel: Task state set successfully { dagId: 'my_dag', taskId: 'my_task', state: 'success' }
+   ```
+
+### Test 6: Task Count Display
+1. Open DAG Details: Click on any DAG
+2. Look at the **Tasks** tab label
+3. **Expected**: Should show "📋 Tasks (N)" where N is the number of tasks
+4. **Expected logs in DevTools Console**:
+   ```
+   [Airflow] DAG Details Panel initialized { dagId: 'my_dag', taskCount: 5 }
+   [Airflow] Task structure rendered: 5 tasks
+   ```
+5. If task count is 0:
+   - Switch to **DAG Runs** tab
+   - Click **Load** button
+   - The extension will auto-load task structure from first run
+   - **Expected logs**:
+     ```
+     [Airflow] Message received from extension: updateTaskStructure {...}
+     [Airflow] Updating task structure: 5 tasks
+     [Airflow] Task structure updated successfully
+     ```
 
 ## Troubleshooting
 
-**If buttons still don't work:**
-1. Reload VS Code window: `Ctrl+Shift+P` → "Developer: Reload Window"
-2. Check Output panel: `View` → `Output` → "Airflow Extension"
-3. Check browser console: `Help` → `Toggle Developer Tools`
-4. Verify server connection: Run "Airflow: Test Server Connection"
+### If NO logs appear in DevTools Console:
+1. Make sure DevTools is open: `Help` → `Toggle Developer Tools`
+2. Make sure you're on the **Console** tab
+3. Try typing `[Airflow]` in the filter box
+4. Try clicking the button again
 
-**If UI doesn't look compact:**
-1. Hard reload the webview (close and reopen the panel)
-2. Check if custom CSS is interfering
-3. Verify the compiled files are up to date (check timestamps)
+### If NO logs appear in Output Panel:
+1. Make sure Output panel is open: `View` → `Output`
+2. Make sure **"Airflow Extension"** is selected in dropdown
+3. Try: `Ctrl+Shift+P` → "Developer: Reload Window"
+4. Check if extension is activated: Look for "Airflow Extension Activated Successfully" message
 
-**If tasks don't load:**
-1. Verify DAG has tasks defined
-2. Check if DAG details API endpoint is working
-3. Look for errors in Output panel
-4. Try refreshing the DAG details panel
+### If Delete button does NOTHING:
+1. Open DevTools Console
+2. Click the Delete button
+3. Look for JavaScript errors (red text)
+4. Check if you see `[Airflow] Click event on button with action: delete`
+5. If you see the click event but no message sent:
+   - The confirm dialog might be blocked
+   - Check browser console for errors
 
----
+### If Task count shows 0 but tasks exist:
+1. Check DevTools Console for: `[Airflow] DAG Details Panel initialized`
+2. Look at the `taskCount` value
+3. If it's 0, switch to DAG Runs tab and click Load
+4. The extension will fetch task structure from first run
+5. Check for: `[Airflow] Updating task structure: N tasks`
 
-## Success Criteria
+## Common Issues
 
-✅ All 10 tests pass
-✅ No console errors
-✅ UI is visibly more compact
-✅ All buttons respond correctly
-✅ Auto-refresh works after operations
-✅ Tooltips are helpful and accurate
-✅ Performance is smooth and responsive
+### Issue: "No logs in Output Panel"
+**Cause**: Logger not initialized or wrong output channel selected
+**Fix**: 
+1. Reload window: `Ctrl+Shift+P` → "Developer: Reload Window"
+2. Check Output dropdown is set to "Airflow Extension"
 
-**Result: Extension is production-ready! 🎉**
+### Issue: "Delete button click not detected"
+**Cause**: Event listener not attached or button not properly rendered
+**Fix**:
+1. Check DevTools Console for JavaScript errors
+2. Inspect the button element: Right-click → Inspect
+3. Verify it has `data-action="delete"` attribute
+4. Verify it has `data-key` or `data-name` or `data-id` attribute
+
+### Issue: "Message sent but not received by extension"
+**Cause**: Webview message handler not registered
+**Fix**:
+1. Check Output Panel for extension activation logs
+2. Reload window: `Ctrl+Shift+P` → "Developer: Reload Window"
+3. Check for errors in DevTools Console
+
+### Issue: "Task list disappearing"
+**Cause**: HTML being regenerated, losing dynamic content
+**Fix**: This is expected behavior when switching tabs or refreshing. The task list is only shown after clicking "Load" button on a DAG run.
+
+## Summary of Logging Points
+
+| Action | DevTools Console | Output Panel |
+|--------|------------------|--------------|
+| Button Click | ✅ `[Airflow] Click event` | ❌ |
+| Message Sent | ✅ `[Airflow] Sending ... message` | ❌ |
+| Message Received | ❌ | ✅ `[INFO] Panel.handleMessage` |
+| API Call Start | ❌ | ✅ `[INFO] Panel: Starting operation` |
+| API Call Success | ❌ | ✅ `[INFO] Client.method: Success` |
+| API Call Failure | ❌ | ✅ `[ERROR] Client.method: Failed` |
+| Operation Complete | ❌ | ✅ `[INFO] Panel: Operation completed` |
+
+**Both logs are needed to trace the full flow from button click to API call completion.**

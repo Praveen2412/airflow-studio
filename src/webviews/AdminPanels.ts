@@ -47,28 +47,37 @@ function page(title: string, tableHead: string, rows: string, formBody: string, 
   document.getElementById('btnCancel').addEventListener('click', function(){ document.getElementById('form').style.display='none'; });
   ${script}
   window.handleAction = function(btn, vs){
+    console.log('[Airflow] Button clicked:', btn.dataset.action, btn.dataset);
     const action = btn.dataset.action;
     if(action === 'delete'){
       if(btn.dataset.key){
+        console.log('[Airflow] Deleting variable:', btn.dataset.key);
         if(confirm('Delete variable "' + btn.dataset.key + '"?')){
+          console.log('[Airflow] Sending delete message for variable');
           vs.postMessage({command:'delete', key: btn.dataset.key});
         }
       } else if(btn.dataset.name){
+        console.log('[Airflow] Deleting pool:', btn.dataset.name);
         if(confirm('Delete pool "' + btn.dataset.name + '"?')){
+          console.log('[Airflow] Sending delete message for pool');
           vs.postMessage({command:'delete', name: btn.dataset.name});
         }
       } else if(btn.dataset.id){
+        console.log('[Airflow] Deleting connection:', btn.dataset.id);
         if(confirm('Delete connection "' + btn.dataset.id + '"?')){
+          console.log('[Airflow] Sending delete message for connection');
           vs.postMessage({command:'delete', connectionId: btn.dataset.id});
         }
       }
     } else if(action === 'edit'){
+      console.log('[Airflow] Editing item');
       handleEdit(btn);
     }
   };
   document.addEventListener('click', function(e){
     const btn = e.target.closest('[data-action]');
     if(!btn) return;
+    console.log('[Airflow] Click event on button with action:', btn.dataset.action);
     handleAction(btn, vscode);
   });
 })();
@@ -104,19 +113,36 @@ export class VariablesPanel {
   }
 
   private async handleMessage(msg: any) {
+    console.log('[Airflow Extension] VariablesPanel.handleMessage called', msg);
+    Logger.info('VariablesPanel.handleMessage', { command: msg.command, key: msg.key });
     const client = await this.serverManager.getClient();
-    if (!client) return;
+    if (!client) { 
+      console.error('[Airflow Extension] VariablesPanel: No client');
+      Logger.error('VariablesPanel: No client'); 
+      return; 
+    }
     try {
       if (msg.command === 'create' || msg.command === 'edit') {
+        console.log('[Airflow Extension] VariablesPanel: Upserting variable', msg.key);
+        Logger.info('VariablesPanel: Upserting variable', { key: msg.key });
         await client.upsertVariable(msg.key, msg.value, msg.description);
         vscode.window.showInformationMessage(`Variable "${msg.key}" saved`);
+        Logger.info('VariablesPanel: Variable saved', { key: msg.key });
       } else if (msg.command === 'delete') {
+        console.log('[Airflow Extension] VariablesPanel: Deleting variable', msg.key);
+        Logger.info('VariablesPanel: Deleting variable', { key: msg.key });
         await client.deleteVariable(msg.key);
         vscode.window.showInformationMessage(`Variable "${msg.key}" deleted`);
+        Logger.info('VariablesPanel: Variable deleted', { key: msg.key });
+      } else if (msg.command === 'refresh') {
+        console.log('[Airflow Extension] VariablesPanel: Refreshing');
+        Logger.info('VariablesPanel: Refreshing');
       }
+      console.log('[Airflow Extension] VariablesPanel: Calling update()');
       this.update();
     } catch (e: any) {
-      Logger.error('VariablesPanel', e);
+      console.error('[Airflow Extension] VariablesPanel: Operation failed', e);
+      Logger.error('VariablesPanel: Operation failed', e, { command: msg.command, key: msg.key });
       vscode.window.showErrorMessage(e.message);
     }
   }
@@ -208,19 +234,36 @@ export class PoolsPanel {
   }
 
   private async handleMessage(msg: any) {
+    console.log('[Airflow Extension] PoolsPanel.handleMessage called', msg);
+    Logger.info('PoolsPanel.handleMessage', { command: msg.command, name: msg.name });
     const client = await this.serverManager.getClient();
-    if (!client) return;
+    if (!client) { 
+      console.error('[Airflow Extension] PoolsPanel: No client');
+      Logger.error('PoolsPanel: No client'); 
+      return; 
+    }
     try {
       if (msg.command === 'create' || msg.command === 'edit') {
+        console.log('[Airflow Extension] PoolsPanel: Upserting pool', msg.name);
+        Logger.info('PoolsPanel: Upserting pool', { name: msg.name, slots: msg.slots });
         await client.upsertPool(msg.name, parseInt(msg.slots), msg.description);
         vscode.window.showInformationMessage(`Pool "${msg.name}" saved`);
+        Logger.info('PoolsPanel: Pool saved', { name: msg.name });
       } else if (msg.command === 'delete') {
+        console.log('[Airflow Extension] PoolsPanel: Deleting pool', msg.name);
+        Logger.info('PoolsPanel: Deleting pool', { name: msg.name });
         await client.deletePool(msg.name);
         vscode.window.showInformationMessage(`Pool "${msg.name}" deleted`);
+        Logger.info('PoolsPanel: Pool deleted', { name: msg.name });
+      } else if (msg.command === 'refresh') {
+        console.log('[Airflow Extension] PoolsPanel: Refreshing');
+        Logger.info('PoolsPanel: Refreshing');
       }
+      console.log('[Airflow Extension] PoolsPanel: Calling update()');
       this.update();
     } catch (e: any) {
-      Logger.error('PoolsPanel', e);
+      console.error('[Airflow Extension] PoolsPanel: Operation failed', e);
+      Logger.error('PoolsPanel: Operation failed', e, { command: msg.command, name: msg.name });
       vscode.window.showErrorMessage(e.message);
     }
   }
@@ -312,23 +355,40 @@ export class ConnectionsPanel {
   }
 
   private async handleMessage(msg: any) {
+    console.log('[Airflow Extension] ConnectionsPanel.handleMessage called', msg);
+    Logger.info('ConnectionsPanel.handleMessage', { command: msg.command, connectionId: msg.connectionId });
     const client = await this.serverManager.getClient();
-    if (!client) return;
+    if (!client) { 
+      console.error('[Airflow Extension] ConnectionsPanel: No client');
+      Logger.error('ConnectionsPanel: No client'); 
+      return; 
+    }
     try {
       if (msg.command === 'create' || msg.command === 'edit') {
+        console.log('[Airflow Extension] ConnectionsPanel: Upserting connection', msg.connectionId);
+        Logger.info('ConnectionsPanel: Upserting connection', { connectionId: msg.connectionId });
         await client.upsertConnection({
           connectionId: msg.connectionId, connType: msg.connType,
           host: msg.host, schema: msg.schema, login: msg.login,
           port: msg.port ? parseInt(msg.port) : undefined, extra: msg.extra
         });
         vscode.window.showInformationMessage(`Connection "${msg.connectionId}" saved`);
+        Logger.info('ConnectionsPanel: Connection saved', { connectionId: msg.connectionId });
       } else if (msg.command === 'delete') {
+        console.log('[Airflow Extension] ConnectionsPanel: Deleting connection', msg.connectionId);
+        Logger.info('ConnectionsPanel: Deleting connection', { connectionId: msg.connectionId });
         await client.deleteConnection(msg.connectionId);
         vscode.window.showInformationMessage(`Connection "${msg.connectionId}" deleted`);
+        Logger.info('ConnectionsPanel: Connection deleted', { connectionId: msg.connectionId });
+      } else if (msg.command === 'refresh') {
+        console.log('[Airflow Extension] ConnectionsPanel: Refreshing');
+        Logger.info('ConnectionsPanel: Refreshing');
       }
+      console.log('[Airflow Extension] ConnectionsPanel: Calling update()');
       this.update();
     } catch (e: any) {
-      Logger.error('ConnectionsPanel', e);
+      console.error('[Airflow Extension] ConnectionsPanel: Operation failed', e);
+      Logger.error('ConnectionsPanel: Operation failed', e, { command: msg.command, connectionId: msg.connectionId });
       vscode.window.showErrorMessage(e.message);
     }
   }

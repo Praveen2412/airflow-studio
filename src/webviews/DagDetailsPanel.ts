@@ -31,64 +31,83 @@ export class DagDetailsPanel {
   }
 
   private async handleMessage(msg: any) {
+    Logger.info('DagDetailsPanel.handleMessage', { command: msg.command, dagId: this.dagId });
     const client = await this.serverManager.getClient();
-    if (!client) return;
+    if (!client) { Logger.error('DagDetailsPanel: No client'); return; }
     try {
-      Logger.debug('DagDetailsPanel.handleMessage', msg);
       switch (msg.command) {
         case 'trigger':
+          Logger.info('DagDetailsPanel: Triggering DAG', { dagId: this.dagId, hasConf: !!msg.conf });
           await client.triggerDagRun(this.dagId, msg.conf || undefined);
           vscode.window.showInformationMessage(`DAG ${this.dagId} triggered`);
+          Logger.info('DagDetailsPanel: DAG triggered successfully', { dagId: this.dagId });
           setTimeout(() => this.loadDagRuns(), 1000);
           break;
         case 'pause':
+          Logger.info('DagDetailsPanel: Pausing DAG', { dagId: this.dagId });
           await client.pauseDag(this.dagId, true);
           vscode.window.showInformationMessage(`DAG ${this.dagId} paused`);
+          Logger.info('DagDetailsPanel: DAG paused successfully', { dagId: this.dagId });
           this.update();
           break;
         case 'unpause':
+          Logger.info('DagDetailsPanel: Unpausing DAG', { dagId: this.dagId });
           await client.pauseDag(this.dagId, false);
           vscode.window.showInformationMessage(`DAG ${this.dagId} unpaused`);
+          Logger.info('DagDetailsPanel: DAG unpaused successfully', { dagId: this.dagId });
           this.update();
           break;
         case 'refresh':
+          Logger.info('DagDetailsPanel: Refreshing', { dagId: this.dagId });
           this.update();
           break;
         case 'loadDagRuns':
+          Logger.info('DagDetailsPanel: Loading DAG runs', { dagId: this.dagId });
           this.loadDagRuns();
           break;
         case 'loadTasks':
+          Logger.info('DagDetailsPanel: Loading tasks', { dagId: this.dagId, dagRunId: msg.dagRunId });
           this.loadTasks(msg.dagRunId);
           break;
         case 'clearTask':
+          Logger.info('DagDetailsPanel: Clearing task', { dagId: this.dagId, dagRunId: msg.dagRunId, taskId: msg.taskId });
           await client.clearTaskInstances(this.dagId, msg.dagRunId, [msg.taskId]);
           vscode.window.showInformationMessage(`Task ${msg.taskId} cleared`);
+          Logger.info('DagDetailsPanel: Task cleared successfully', { dagId: this.dagId, taskId: msg.taskId });
           this.loadTasks(msg.dagRunId);
           break;
         case 'setTaskState':
+          Logger.info('DagDetailsPanel: Setting task state', { dagId: this.dagId, dagRunId: msg.dagRunId, taskId: msg.taskId, state: msg.state });
           await client.setTaskInstanceState(this.dagId, msg.dagRunId, msg.taskId, msg.state);
           vscode.window.showInformationMessage(`Task ${msg.taskId} set to ${msg.state}`);
+          Logger.info('DagDetailsPanel: Task state set successfully', { dagId: this.dagId, taskId: msg.taskId, state: msg.state });
           this.loadTasks(msg.dagRunId);
           break;
         case 'setDagRunState':
+          Logger.info('DagDetailsPanel: Setting DAG run state', { dagId: this.dagId, dagRunId: msg.dagRunId, state: msg.state });
           await client.setDagRunState(this.dagId, msg.dagRunId, msg.state);
           vscode.window.showInformationMessage(`DAG run set to ${msg.state}`);
+          Logger.info('DagDetailsPanel: DAG run state set successfully', { dagId: this.dagId, dagRunId: msg.dagRunId, state: msg.state });
           this.loadDagRuns();
           break;
         case 'viewLogs':
+          Logger.info('DagDetailsPanel: Viewing logs', { dagId: this.dagId, dagRunId: msg.dagRunId, taskId: msg.taskId, tryNumber: msg.tryNumber });
           this.loadTaskLogs(msg.dagRunId, msg.taskId, msg.tryNumber || 1, msg.maxTries || 1);
           break;
         case 'viewSource':
+          Logger.info('DagDetailsPanel: Viewing source', { dagId: this.dagId });
           this.loadDagSource();
           break;
         case 'openInEditor':
+          Logger.info('DagDetailsPanel: Opening in editor', { dagId: this.dagId });
           const source = await client.getDagSource(this.dagId);
           const doc = await vscode.workspace.openTextDocument({ content: source, language: 'python' });
           await vscode.window.showTextDocument(doc, { preview: false });
+          Logger.info('DagDetailsPanel: Opened in editor successfully', { dagId: this.dagId });
           break;
       }
     } catch (error: any) {
-      Logger.error('DagDetailsPanel.handleMessage: Failed', error, { command: msg.command });
+      Logger.error('DagDetailsPanel.handleMessage: Failed', error, { command: msg.command, dagId: this.dagId });
       vscode.window.showErrorMessage(error.message);
     }
   }
@@ -141,48 +160,56 @@ export class DagDetailsPanel {
 
   private async loadDagRuns() {
     try {
+      Logger.debug('DagDetailsPanel.loadDagRuns: Starting', { dagId: this.dagId });
       const client = await this.serverManager.getClient();
       if (!client) return;
       const runs = await client.listDagRuns(this.dagId, 25);
+      Logger.info('DagDetailsPanel.loadDagRuns: Success', { dagId: this.dagId, count: runs.length });
       this.panel.webview.postMessage({ command: 'updateDagRuns', runs });
     } catch (error: any) {
-      Logger.error('DagDetailsPanel.loadDagRuns: Failed', error);
+      Logger.error('DagDetailsPanel.loadDagRuns: Failed', error, { dagId: this.dagId });
       this.panel.webview.postMessage({ command: 'updateDagRuns', runs: [], error: error.message });
     }
   }
 
   private async loadTasks(dagRunId: string) {
     try {
+      Logger.debug('DagDetailsPanel.loadTasks: Starting', { dagId: this.dagId, dagRunId });
       const client = await this.serverManager.getClient();
       if (!client) return;
       const tasks = await client.listTaskInstances(this.dagId, dagRunId);
+      Logger.info('DagDetailsPanel.loadTasks: Success', { dagId: this.dagId, dagRunId, count: tasks.length });
       this.panel.webview.postMessage({ command: 'updateTasks', tasks, dagRunId });
     } catch (error: any) {
-      Logger.error('DagDetailsPanel.loadTasks: Failed', error);
+      Logger.error('DagDetailsPanel.loadTasks: Failed', error, { dagId: this.dagId, dagRunId });
       this.panel.webview.postMessage({ command: 'updateTasks', tasks: [], dagRunId, error: error.message });
     }
   }
 
   private async loadTaskLogs(dagRunId: string, taskId: string, tryNumber: number, maxTries: number) {
     try {
+      Logger.debug('DagDetailsPanel.loadTaskLogs: Starting', { dagId: this.dagId, dagRunId, taskId, tryNumber });
       const client = await this.serverManager.getClient();
       if (!client) return;
       const logs = await client.getTaskLogs(this.dagId, taskId, dagRunId, tryNumber);
+      Logger.info('DagDetailsPanel.loadTaskLogs: Success', { dagId: this.dagId, taskId, tryNumber, logLength: logs.length });
       this.panel.webview.postMessage({ command: 'showLogs', logs, taskId, tryNumber, maxTries, dagRunId });
     } catch (error: any) {
-      Logger.error('DagDetailsPanel.loadTaskLogs: Failed', error);
+      Logger.error('DagDetailsPanel.loadTaskLogs: Failed', error, { dagId: this.dagId, taskId, tryNumber });
       vscode.window.showErrorMessage(`Failed to load logs: ${error.message}`);
     }
   }
 
   private async loadDagSource() {
     try {
+      Logger.debug('DagDetailsPanel.loadDagSource: Starting', { dagId: this.dagId });
       const client = await this.serverManager.getClient();
       if (!client) return;
       const source = await client.getDagSource(this.dagId);
+      Logger.info('DagDetailsPanel.loadDagSource: Success', { dagId: this.dagId, sourceLength: source.length });
       this.panel.webview.postMessage({ command: 'showCode', source, dagId: this.dagId });
     } catch (error: any) {
-      Logger.error('DagDetailsPanel.loadDagSource: Failed', error);
+      Logger.error('DagDetailsPanel.loadDagSource: Failed', error, { dagId: this.dagId });
       vscode.window.showErrorMessage(`Failed to load DAG source: ${error.message}`);
     }
   }
@@ -298,6 +325,7 @@ label{display:block;margin:6px 0 3px;font-weight:600;font-size:11px}
 const vscode=acquireVsCodeApi();
 const dag=${dagData};
 const taskStructure=${tasksData};
+console.log('[Airflow] DAG Details Panel initialized', { dagId: dag.dagId, taskCount: taskStructure.length });
 (function(){
   const el=document.getElementById('taskStructure');
   if(taskStructure.length===0){el.innerHTML='<div class="empty">No task structure available. Switch to DAG Runs tab to view task instances.</div>';return;}
@@ -305,6 +333,7 @@ const taskStructure=${tasksData};
   taskStructure.forEach(function(t){h+='<tr><td>'+esc(t.task_id)+'</td><td>'+esc(t.task_type)+'</td><td>'+(t.downstream_task_ids.length>0?t.downstream_task_ids.join(', '):'-')+'</td></tr>';});
   h+='</tbody></table>';
   el.innerHTML=h;
+  console.log('[Airflow] Task structure rendered:', taskStructure.length, 'tasks');
 })();
 document.getElementById('btnTrigger').addEventListener('click',function(){document.getElementById('triggerForm').style.display='block';});
 document.getElementById('btnTriggerCancel').addEventListener('click',function(){document.getElementById('triggerForm').style.display='none';});
@@ -350,6 +379,7 @@ document.querySelectorAll('.tab').forEach(function(tab){
 });
 window.addEventListener('message',function(e){
   const msg=e.data;
+  console.log('[Airflow] Message received from extension:', msg.command, msg);
   if(msg.command==='updateDagRuns')displayDagRuns(msg.runs,msg.error);
   else if(msg.command==='updateTasks')displayTasks(msg.tasks,msg.dagRunId,msg.error);
   else if(msg.command==='showLogs')showLogs(msg.taskId,msg.logs,msg.tryNumber,msg.maxTries,msg.dagRunId);
@@ -357,12 +387,14 @@ window.addEventListener('message',function(e){
   else if(msg.command==='updateTaskStructure')updateTaskStructure(msg.tasks);
 });
 function updateTaskStructure(tasks){
+  console.log('[Airflow] Updating task structure:', tasks ? tasks.length : 0, 'tasks');
   const el=document.getElementById('taskStructure');
   if(!tasks||tasks.length===0){el.innerHTML='<div class="empty">No task structure available. Switch to DAG Runs tab to view task instances.</div>';return;}
   let h='<table><thead><tr><th>Task ID</th><th>Type</th><th>Downstream Tasks</th></tr></thead><tbody>';
   tasks.forEach(function(t){h+='<tr><td>'+esc(t.task_id)+'</td><td>'+esc(t.task_type)+'</td><td>'+(t.downstream_task_ids&&t.downstream_task_ids.length>0?t.downstream_task_ids.join(', '):'-')+'</td></tr>';});
   h+='</tbody></table>';
   el.innerHTML=h;
+  console.log('[Airflow] Task structure updated successfully');
 }
 function showInline(title,content,showEditor){
   document.getElementById('mainView').style.display='none';
@@ -432,30 +464,47 @@ function displayTasks(tasks,dagRunId,error){
 document.addEventListener('click',function(e){
   const btn=e.target.closest('button[data-action]');
   if(!btn)return;
+  console.log('[Airflow] DAG Details button clicked:', btn.dataset.action, btn.dataset);
   const action=btn.dataset.action;
   const runId=btn.dataset.runId;
   const taskId=btn.dataset.taskId;
   if(action==='load-tasks'){
+    console.log('[Airflow] Loading tasks for run:', runId);
     document.getElementById('tasksContent').innerHTML='<div class="loading">Loading...</div>';
     vscode.postMessage({command:'loadTasks',dagRunId:runId});
   }else if(action==='run-success'){
-    if(confirm('Mark DAG run as success?'))vscode.postMessage({command:'setDagRunState',dagRunId:runId,state:'success'});
+    console.log('[Airflow] Setting DAG run to success:', runId);
+    if(confirm('Mark DAG run as success?')){
+      console.log('[Airflow] Sending setDagRunState message');
+      vscode.postMessage({command:'setDagRunState',dagRunId:runId,state:'success'});
+    }
   }else if(action==='run-failed'){
-    if(confirm('Mark DAG run as failed?'))vscode.postMessage({command:'setDagRunState',dagRunId:runId,state:'failed'});
+    console.log('[Airflow] Setting DAG run to failed:', runId);
+    if(confirm('Mark DAG run as failed?')){
+      console.log('[Airflow] Sending setDagRunState message');
+      vscode.postMessage({command:'setDagRunState',dagRunId:runId,state:'failed'});
+    }
   }else if(action==='view-logs'){
+    console.log('[Airflow] Viewing logs for task:', taskId);
     vscode.postMessage({command:'viewLogs',dagRunId:runId,taskId:taskId,tryNumber:parseInt(btn.dataset.try),maxTries:parseInt(btn.dataset.maxTries||'1')});
   }else if(action==='clear-task'){
-    if(confirm('Clear task '+taskId+'?'))vscode.postMessage({command:'clearTask',dagRunId:runId,taskId:taskId});
+    console.log('[Airflow] Clearing task:', taskId);
+    if(confirm('Clear task '+taskId+'?')){
+      console.log('[Airflow] Sending clearTask message');
+      vscode.postMessage({command:'clearTask',dagRunId:runId,taskId:taskId});
+    }
   }
 });
 document.addEventListener('change',function(e){
   const sel=e.target;
   if(!sel||sel.tagName!=='SELECT'||sel.dataset.action!=='set-task-state')return;
   if(!sel.value)return;
+  console.log('[Airflow] Task state dropdown changed:', sel.value, sel.dataset);
   const state=sel.value;
   const runId=sel.dataset.runId;
   const taskId=sel.dataset.taskId;
   if(confirm('Set task '+taskId+' to '+state+'?')){
+    console.log('[Airflow] Sending setTaskState message');
     vscode.postMessage({command:'setTaskState',dagRunId:runId,taskId:taskId,state:state});
   }
   sel.value='';
