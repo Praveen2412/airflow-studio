@@ -24,8 +24,9 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<ServerTreeIt
     if (!element) {
       Logger.debug('ServersTreeProvider.getChildren: Loading servers');
       const servers = await this.serverManager.getServers();
-      Logger.debug('ServersTreeProvider.getChildren: Loaded', { count: servers.length });
-      const items: (ServerTreeItem | AddServerTreeItem)[] = servers.map(s => new ServerTreeItem(s));
+      const activeServer = await this.serverManager.getActiveServer();
+      Logger.debug('ServersTreeProvider.getChildren: Loaded', { count: servers.length, activeId: activeServer?.id });
+      const items: (ServerTreeItem | AddServerTreeItem)[] = servers.map(s => new ServerTreeItem(s, s.id === activeServer?.id));
       // Add "Add Server" button at the top
       items.unshift(new AddServerTreeItem());
       return items;
@@ -36,7 +37,7 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<ServerTreeIt
 
 class AddServerTreeItem extends vscode.TreeItem {
   constructor() {
-    super('➕ Add Server', vscode.TreeItemCollapsibleState.None);
+    super('Add Server', vscode.TreeItemCollapsibleState.None);
     this.contextValue = 'addServer';
     this.command = {
       command: 'airflow.addServerPanel',
@@ -47,16 +48,16 @@ class AddServerTreeItem extends vscode.TreeItem {
 }
 
 class ServerTreeItem extends vscode.TreeItem {
-  constructor(public readonly server: ServerProfile) {
+  constructor(public readonly server: ServerProfile, isActive: boolean = false) {
     super(server.name, vscode.TreeItemCollapsibleState.None);
     this.contextValue = 'server';
-    this.description = server.type === 'mwaa' ? 'MWAA' : 'Self-hosted';
-    this.tooltip = `${server.name}\n${server.baseUrl || server.awsRegion}\nAPI: ${server.apiMode}`;
+    this.description = `${server.type === 'mwaa' ? 'MWAA' : 'Self-hosted'}${isActive ? ' (Active)' : ''}`;
+    this.tooltip = `${server.name}\n${server.baseUrl || server.awsRegion}\nAPI: ${server.apiMode}${isActive ? '\n\u2713 Active Server' : ''}`;
     
     const iconName = server.lastHealthStatus === 'healthy' ? 'pass' : 
                      server.lastHealthStatus === 'degraded' ? 'warning' : 
                      server.lastHealthStatus === 'down' ? 'error' : 'circle-outline';
-    this.iconPath = new vscode.ThemeIcon(iconName);
+    this.iconPath = new vscode.ThemeIcon(iconName, isActive ? new vscode.ThemeColor('charts.green') : undefined);
     
     // Click to open details
     this.command = {

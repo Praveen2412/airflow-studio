@@ -70,6 +70,7 @@ export function activate(context: vscode.ExtensionContext) {
       { id: 'airflow.addServer', handler: addServer },
       { id: 'airflow.addServerPanel', handler: addServerPanel },
       { id: 'airflow.refreshServers', handler: refreshServers },
+      { id: 'airflow.setActiveServer', handler: setActiveServer },
       { id: 'airflow.editServer', handler: editServer },
       { id: 'airflow.deleteServer', handler: deleteServer },
       { id: 'airflow.testConnection', handler: testConnection },
@@ -138,6 +139,25 @@ async function refreshServers() {
   Logger.info('=== USER ACTION: Refresh Servers ===');
   serversTreeProvider.refresh();
   vscode.window.showInformationMessage('Servers refreshed');
+}
+
+async function setActiveServer(item: any) {
+  Logger.info('=== USER ACTION: Set Active Server ===');
+  const serverId = item?.server?.id;
+  Logger.debug('setActiveServer: Input', { serverId });
+  
+  if (!serverId) return;
+
+  try {
+    await serverManager.setActiveServer(serverId);
+    serversTreeProvider.refresh();
+    await loadActiveServer();
+    vscode.window.showInformationMessage(`✓ Server ${item.server.name} is now active`);
+    Logger.info('setActiveServer: Success', { serverId });
+  } catch (error: any) {
+    Logger.error('setActiveServer: Failed', error, { serverId });
+    vscode.window.showErrorMessage(`Failed to set active server: ${error.message}`);
+  }
 }
 
 async function refreshAdmin() {

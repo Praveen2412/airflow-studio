@@ -36,6 +36,10 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "airflow.setActiveServer",
+        "title": "Airflow: Set as Active Server"
+      },
+      {
         "command": "airflow.editServer",
         "title": "Airflow: Edit Server"
       },
@@ -166,6 +170,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "airflow.setActiveServer",
+          "when": "view == airflowServers && viewItem == server",
+          "group": "inline"
+        },
         {
           "command": "airflow.editServer",
           "when": "view == airflowServers && viewItem == server"

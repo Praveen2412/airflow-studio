@@ -170,10 +170,8 @@ src/
 ## Documentation
 
 - [README.md](README.md) - Project overview and usage ✅
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Technical design and structure ✅
 - [TRACKER.md](TRACKER.md) - Implementation progress ✅
-- [DEBUGGING.md](DEBUGGING.md) - Comprehensive debugging guide ✅
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Quick troubleshooting reference ✅
+
 
 ## Security
 

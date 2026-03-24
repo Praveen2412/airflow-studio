@@ -46,7 +46,7 @@ function page(title: string, tableHead: string, rows: string, formBody: string, 
   document.getElementById('btnRefresh').addEventListener('click', function(){ vscode.postMessage({command:'refresh'}); });
   document.getElementById('btnCancel').addEventListener('click', function(){ document.getElementById('form').style.display='none'; });
   ${script}
-  window.handleAction = function(btn, vs){
+  window.handleAction = function(btn){
     console.log('[Airflow] Button clicked:', btn.dataset.action, btn.dataset);
     const action = btn.dataset.action;
     if(action === 'delete'){
@@ -54,19 +54,19 @@ function page(title: string, tableHead: string, rows: string, formBody: string, 
         console.log('[Airflow] Deleting variable:', btn.dataset.key);
         if(confirm('Delete variable "' + btn.dataset.key + '"?')){
           console.log('[Airflow] Sending delete message for variable');
-          vs.postMessage({command:'delete', key: btn.dataset.key});
+          vscode.postMessage({command:'delete', key: btn.dataset.key});
         }
       } else if(btn.dataset.name){
         console.log('[Airflow] Deleting pool:', btn.dataset.name);
         if(confirm('Delete pool "' + btn.dataset.name + '"?')){
           console.log('[Airflow] Sending delete message for pool');
-          vs.postMessage({command:'delete', name: btn.dataset.name});
+          vscode.postMessage({command:'delete', name: btn.dataset.name});
         }
       } else if(btn.dataset.id){
         console.log('[Airflow] Deleting connection:', btn.dataset.id);
         if(confirm('Delete connection "' + btn.dataset.id + '"?')){
           console.log('[Airflow] Sending delete message for connection');
-          vs.postMessage({command:'delete', connectionId: btn.dataset.id});
+          vscode.postMessage({command:'delete', connectionId: btn.dataset.id});
         }
       }
     } else if(action === 'edit'){
@@ -78,7 +78,7 @@ function page(title: string, tableHead: string, rows: string, formBody: string, 
     const btn = e.target.closest('[data-action]');
     if(!btn) return;
     console.log('[Airflow] Click event on button with action:', btn.dataset.action);
-    handleAction(btn, vscode);
+    handleAction(btn);
   });
 })();
 </script>
