@@ -2,12 +2,29 @@ import * as vscode from 'vscode';
 
 export class Logger {
   private static outputChannel: vscode.OutputChannel;
-  private static logLevel: 'debug' | 'info' | 'warn' | 'error' = 'debug';
+  private static logLevel: 'debug' | 'info' | 'warn' | 'error' = 'info'; // Changed default from 'debug' to 'info'
 
   static initialize(context: vscode.ExtensionContext) {
     this.outputChannel = vscode.window.createOutputChannel('Airflow Extension');
     context.subscriptions.push(this.outputChannel);
+    this.updateLogLevel();
     this.info('Logger initialized');
+    
+    // Watch for configuration changes
+    context.subscriptions.push(
+      vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('airflowStudio.verboseLogging')) {
+          this.updateLogLevel();
+        }
+      })
+    );
+  }
+  
+  private static updateLogLevel() {
+    const config = vscode.workspace.getConfiguration('airflowStudio');
+    const verboseLogging = config.get<boolean>('verboseLogging', false);
+    this.logLevel = verboseLogging ? 'debug' : 'info';
+    this.info(`Log level set to: ${this.logLevel}`);
   }
 
   static setLogLevel(level: 'debug' | 'info' | 'warn' | 'error') {

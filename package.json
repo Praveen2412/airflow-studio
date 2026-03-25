@@ -1,7 +1,7 @@
 {
-  "name": "airflow-vscode",
-  "displayName": "Airflow Manager",
-  "description": "Manage Apache Airflow and AWS MWAA environments from VS Code",
+  "name": "airflow-studio",
+  "displayName": "Airflow Studio",
+  "description": "Comprehensive Apache Airflow and AWS MWAA management studio for VS Code",
   "version": "0.1.0",
   "publisher": "airflow",
   "repository": {
@@ -15,172 +15,214 @@
     "Other"
   ],
   "activationEvents": [
-    "*"
+    "onView:airflowServers"
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "Airflow Studio",
+      "properties": {
+        "airflowStudio.verboseLogging": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable verbose logging for debugging (includes all HTTP requests/responses and debug messages)"
+        }
+      }
+    },
     "commands": [
       {
         "command": "airflow.addServer",
-        "title": "Airflow: Add Server (Quick)",
+        "title": "Airflow Studio: Add Server",
         "icon": "$(add)"
       },
       {
+        "command": "airflow.toggleShowOnlyFavoriteServers",
+        "title": "Airflow Studio: Toggle Show Only Favorite Servers",
+        "icon": "$(star)"
+      },
+      {
         "command": "airflow.addServerPanel",
-        "title": "Airflow: Add Server",
+        "title": "Airflow Studio: Add Server Panel",
         "icon": "$(add)"
       },
       {
         "command": "airflow.refreshServers",
-        "title": "Airflow: Refresh Servers",
+        "title": "Airflow Studio: Refresh Servers",
         "icon": "$(refresh)"
       },
       {
-        "command": "airflow.setActiveServer",
-        "title": "Airflow: Set as Active Server"
+        "command": "airflow.toggleServerVisibility",
+        "title": "Airflow Studio: Toggle Server Visibility",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "airflow.toggleDagsVisibility",
+        "title": "Airflow Studio: Toggle DAGs Visibility",
+        "icon": "$(eye)"
       },
       {
         "command": "airflow.editServer",
-        "title": "Airflow: Edit Server"
+        "title": "Airflow Studio: Edit Server",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "airflow.toggleFavoriteServer",
+        "title": "Airflow Studio: Add to Favorites",
+        "icon": "$(star)"
       },
       {
         "command": "airflow.deleteServer",
-        "title": "Airflow: Delete Server"
+        "title": "Airflow Studio: Delete Server",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "airflow.toggleShowOnlyFavoriteDags",
+        "title": "Airflow Studio: Toggle Show Only Favorite DAGs",
+        "icon": "$(filter)"
       },
       {
         "command": "airflow.testConnection",
-        "title": "Airflow: Test Server Connection"
+        "title": "Airflow Studio: Test Server Connection"
       },
       {
         "command": "airflow.openServerDetails",
-        "title": "Airflow: Open Server Details"
+        "title": "Airflow Studio: Open Server Details"
       },
       {
         "command": "airflow.refreshDags",
-        "title": "Airflow: Refresh DAGs",
+        "title": "Airflow Studio: Refresh DAGs",
         "icon": "$(refresh)"
       },
       {
         "command": "airflow.refreshAdmin",
-        "title": "Airflow: Refresh Admin",
+        "title": "Airflow Studio: Refresh Admin",
         "icon": "$(refresh)"
       },
       {
         "command": "airflow.openDag",
-        "title": "Airflow: Open DAG"
+        "title": "Airflow Studio: Open DAG"
       },
       {
         "command": "airflow.openDagDetails",
-        "title": "Airflow: Open DAG Details"
+        "title": "Airflow Studio: Open DAG Details"
       },
       {
         "command": "airflow.triggerDag",
-        "title": "Airflow: Trigger DAG with Config"
+        "title": "Airflow Studio: Trigger DAG with Config"
       },
       {
         "command": "airflow.pauseDag",
-        "title": "Airflow: Pause DAG"
+        "title": "Airflow Studio: Pause DAG"
       },
       {
         "command": "airflow.unpauseDag",
-        "title": "Airflow: Unpause DAG"
+        "title": "Airflow Studio: Unpause DAG"
       },
       {
         "command": "airflow.deleteDag",
-        "title": "Airflow: Delete DAG"
+        "title": "Airflow Studio: Delete DAG",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "airflow.toggleFavoriteDag",
+        "title": "Airflow Studio: Add to Favorites",
+        "icon": "$(heart)"
       },
       {
         "command": "airflow.clearTask",
-        "title": "Airflow: Clear Task Instance(s)"
+        "title": "Airflow Studio: Clear Task Instance(s)"
       },
       {
         "command": "airflow.viewLogs",
-        "title": "Airflow: View Task Logs"
+        "title": "Airflow Studio: View Task Logs"
       },
       {
         "command": "airflow.openVariables",
-        "title": "Airflow: Open Variables"
+        "title": "Airflow Studio: Open Variables"
       },
       {
         "command": "airflow.openVariablesPanel",
-        "title": "Airflow: Open Variables Panel"
+        "title": "Airflow Studio: Open Variables Panel"
       },
       {
         "command": "airflow.openPools",
-        "title": "Airflow: Open Pools"
+        "title": "Airflow Studio: Open Pools"
       },
       {
         "command": "airflow.openPoolsPanel",
-        "title": "Airflow: Open Pools Panel"
+        "title": "Airflow Studio: Open Pools Panel"
       },
       {
         "command": "airflow.openConnections",
-        "title": "Airflow: Open Connections"
+        "title": "Airflow Studio: Open Connections"
       },
       {
         "command": "airflow.openConnectionsPanel",
-        "title": "Airflow: Open Connections Panel"
+        "title": "Airflow Studio: Open Connections Panel"
       },
       {
         "command": "airflow.openHealthCheck",
-        "title": "Airflow: Open Health Check"
+        "title": "Airflow Studio: Open Health Check"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "airflow",
-          "title": "Airflow",
+          "id": "airflowStudio",
+          "title": "Airflow Studio",
           "icon": "resources/airflow.svg"
         }
       ]
     },
     "views": {
-      "airflow": [
+      "airflowStudio": [
         {
           "id": "airflowServers",
           "name": "Servers"
-        },
-        {
-          "id": "airflowDags",
-          "name": "DAGs"
-        },
-        {
-          "id": "airflowAdmin",
-          "name": "Admin"
         }
       ]
     },
     "menus": {
       "view/title": [
         {
+          "command": "airflow.addServer",
+          "when": "view == airflowServers",
+          "group": "navigation@1"
+        },
+        {
+          "command": "airflow.toggleShowOnlyFavoriteServers",
+          "when": "view == airflowServers",
+          "group": "navigation@2"
+        },
+        {
           "command": "airflow.refreshServers",
           "when": "view == airflowServers",
-          "group": "navigation"
-        },
-        {
-          "command": "airflow.refreshDags",
-          "when": "view == airflowDags",
-          "group": "navigation"
-        },
-        {
-          "command": "airflow.refreshAdmin",
-          "when": "view == airflowAdmin",
-          "group": "navigation"
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
         {
-          "command": "airflow.setActiveServer",
+          "command": "airflow.editServer",
           "when": "view == airflowServers && viewItem == server",
-          "group": "inline"
+          "group": "inline@1"
         },
         {
-          "command": "airflow.editServer",
-          "when": "view == airflowServers && viewItem == server"
+          "command": "airflow.toggleFavoriteServer",
+          "when": "view == airflowServers && viewItem == server",
+          "group": "inline@2"
         },
         {
           "command": "airflow.deleteServer",
+          "when": "view == airflowServers && viewItem == server",
+          "group": "inline@3"
+        },
+        {
+          "command": "airflow.toggleShowOnlyFavoriteDags",
+          "when": "view == airflowServers && viewItem == server",
+          "group": "inline@4"
+        },
+        {
+          "command": "airflow.toggleServerVisibility",
           "when": "view == airflowServers && viewItem == server"
         },
         {
@@ -188,20 +230,30 @@
           "when": "view == airflowServers && viewItem == server"
         },
         {
-          "command": "airflow.triggerDag",
-          "when": "view == airflowDags && viewItem == dag"
+          "command": "airflow.toggleDagsVisibility",
+          "when": "view == airflowServers && viewItem == dagsFolder"
         },
         {
-          "command": "airflow.pauseDag",
-          "when": "view == airflowDags && viewItem == dag"
-        },
-        {
-          "command": "airflow.unpauseDag",
-          "when": "view == airflowDags && viewItem == dag"
+          "command": "airflow.toggleFavoriteDag",
+          "when": "view == airflowServers && viewItem == dag",
+          "group": "inline@1"
         },
         {
           "command": "airflow.deleteDag",
-          "when": "view == airflowDags && viewItem == dag"
+          "when": "view == airflowServers && viewItem == dag",
+          "group": "inline@2"
+        },
+        {
+          "command": "airflow.triggerDag",
+          "when": "view == airflowServers && viewItem == dag"
+        },
+        {
+          "command": "airflow.pauseDag",
+          "when": "view == airflowServers && viewItem == dag"
+        },
+        {
+          "command": "airflow.unpauseDag",
+          "when": "view == airflowServers && viewItem == dag"
         }
       ]
     }

@@ -9,6 +9,7 @@ import { Logger } from '../utils/logger';
 export class ServerManager {
   private context: vscode.ExtensionContext;
   private activeServerId?: string;
+  private clientCache: Map<string, { client: IAirflowClient; timestamp: number }> = new Map();
 
   constructor(context: vscode.ExtensionContext) {
     this.context = context;
@@ -104,6 +105,9 @@ export class ServerManager {
       if (password && profile.username) {
         await this.context.secrets.store(`airflow.password.${profile.id}`, password);
       }
+      
+      // Clear cached client to force recreation with new settings
+      this.clientCache.delete(profile.id);
     }
   }
 
@@ -112,6 +116,9 @@ export class ServerManager {
     const filtered = servers.filter(s => s.id !== serverId);
     await this.context.globalState.update('airflow.servers', filtered);
     await this.context.secrets.delete(`airflow.password.${serverId}`);
+    
+    // Clear cached client
+    this.clientCache.delete(serverId);
     
     if (this.activeServerId === serverId) {
       this.activeServerId = undefined;
@@ -129,10 +136,22 @@ export class ServerManager {
       return undefined;
     }
 
-    Logger.debug('ServerManager.getClient: Creating client', { type: server.type, name: server.name, apiMode: server.apiMode });
+    // Check cache (cache for 5 minutes)
+    const cached = this.clientCache.get(server.id);
+    if (cached && (Date.now() - cached.timestamp) < 5 * 60 * 1000) {
+      Logger.debug('ServerManager.getClient: Using cached client', { serverId: server.id });
+      return cached.client;
+    }
+
+    Logger.debug('ServerManager.getClient: Creating new client', { type: server.type, name: server.name, apiMode: server.apiMode });
     
     const password = server.username ? await this.context.secrets.get(`airflow.password.${server.id}`) : undefined;
-    return this.createClient(server, password);
+    const client = await this.createClient(server, password);
+    
+    // Cache the client
+    this.clientCache.set(server.id, { client, timestamp: Date.now() });
+    
+    return client;
   }
 
   async testConnection(serverId: string): Promise<{ success: boolean; message: string }> {

@@ -11,6 +11,8 @@ export interface ServerProfile {
   headers?: Record<string, string>;
   lastHealthStatus: 'unknown' | 'healthy' | 'degraded' | 'down';
   lastSyncedTimestamp?: number;
+  isFavorite?: boolean;
+  favoriteDags?: string[];
 }
 
 export interface DagSummary {

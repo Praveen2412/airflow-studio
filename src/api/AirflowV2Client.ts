@@ -276,12 +276,12 @@ export class AirflowV2Client implements IAirflowClient {
       // Try GET first to check if exists
       try {
         await this.http.get(`/api/v2/pools/${name}`);
-        // Exists, update with PATCH
-        await this.http.patch(`/api/v2/pools/${name}`, { name, slots, description: description || '' });
+        // Exists, update with PATCH - include_deferred is required in v2 API
+        await this.http.patch(`/api/v2/pools/${name}`, { name, slots, description: description || '', include_deferred: false });
       } catch (getError: any) {
         if (getError.status === 404) {
           // Doesn't exist, create with POST
-          await this.http.post('/api/v2/pools', { name, slots, description: description || '' });
+          await this.http.post('/api/v2/pools', { name, slots, description: description || '', include_deferred: false });
         } else {
           throw getError;
         }

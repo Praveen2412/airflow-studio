@@ -7,6 +7,8 @@ export class HttpClient {
   private username?: string;
   private password?: string;
   private token?: string;
+  private tokenExpiry?: number;
+  private tokenPromise?: Promise<boolean>;
 
   constructor(baseURL: string, headers?: Record<string, string>) {
     this.baseURL = baseURL;
@@ -44,8 +46,7 @@ export class HttpClient {
           status: response.status,
           statusText: response.statusText,
           url: response.config.url,
-          dataType: Array.isArray(response.data) ? `Array(${response.data.length})` : typeof response.data,
-          dataPreview: this.getResponsePreview(response.data)
+          dataType: Array.isArray(response.data) ? `Array(${response.data.length})` : typeof response.data
         });
         return response;
       },
@@ -62,21 +63,7 @@ export class HttpClient {
     );
   }
 
-  private getResponsePreview(data: any): any {
-    if (!data) return null;
-    if (typeof data === 'string') {
-      return data.length > 100 ? data.substring(0, 100) + '...' : data;
-    }
-    if (Array.isArray(data)) {
-      return data.length > 0 ? `First item keys: ${Object.keys(data[0] || {}).join(', ')}` : 'Empty array';
-    }
-    if (typeof data === 'object') {
-      return `Keys: ${Object.keys(data).slice(0, 10).join(', ')}`;
-    }
-    return String(data);
-  }
-
-  setAuth(username: string, password: string) {
+setAuth(username: string, password: string) {
     this.username = username;
     this.password = password;
     this.client.defaults.auth = { username, password };
@@ -86,8 +73,29 @@ export class HttpClient {
   async setTokenAuth(username: string, password: string) {
     this.username = username;
     this.password = password;
+    
+    // Return existing token if still valid (cache for 50 minutes, tokens typically valid for 60)
+    if (this.token && this.tokenExpiry && Date.now() < this.tokenExpiry) {
+      Logger.debug('HttpClient: Using cached JWT token');
+      return true;
+    }
+    
+    // If token fetch is in progress, wait for it
+    if (this.tokenPromise) {
+      Logger.debug('HttpClient: Waiting for in-progress token fetch');
+      return this.tokenPromise;
+    }
+    
+    // Fetch new token
+    this.tokenPromise = this.fetchToken(username, password);
+    const result = await this.tokenPromise;
+    this.tokenPromise = undefined;
+    return result;
+  }
+  
+  private async fetchToken(username: string, password: string): Promise<boolean> {
     try {
-      Logger.debug('HttpClient: Attempting to get JWT token');
+      Logger.debug('HttpClient: Fetching new JWT token');
       const response = await axios.post(`${this.baseURL}/auth/token`, 
         new URLSearchParams({
           username,
@@ -101,8 +109,9 @@ export class HttpClient {
       );
       
       this.token = response.data.access_token;
+      this.tokenExpiry = Date.now() + (50 * 60 * 1000); // Cache for 50 minutes
       this.client.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
-      Logger.info('HttpClient: JWT token obtained successfully');
+      Logger.info('HttpClient: JWT token obtained and cached');
       return true;
     } catch (error: any) {
       Logger.error('HttpClient: Failed to get JWT token', error);
@@ -118,22 +127,78 @@ export class HttpClient {
   }
 
   async get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    const response = await this.client.get<T>(url, config);
-    return response.data;
+    try {
+      const response = await this.client.get<T>(url, config);
+      return response.data;
+    } catch (error: any) {
+      // If 401 and we have JWT credentials, try to refresh token
+      if (error.response?.status === 401 && this.username && this.password && this.token) {
+        Logger.info('HttpClient: Token expired, refreshing...');
+        this.token = undefined;
+        this.tokenExpiry = undefined;
+        await this.setTokenAuth(this.username, this.password);
+        // Retry the request
+        const response = await this.client.get<T>(url, config);
+        return response.data;
+      }
+      throw error;
+    }
   }
 
   async post<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
-    const response = await this.client.post<T>(url, data, config);
-    return response.data;
+    try {
+      const response = await this.client.post<T>(url, data, config);
+      return response.data;
+    } catch (error: any) {
+      // If 401 and we have JWT credentials, try to refresh token
+      if (error.response?.status === 401 && this.username && this.password && this.token) {
+        Logger.info('HttpClient: Token expired, refreshing...');
+        this.token = undefined;
+        this.tokenExpiry = undefined;
+        await this.setTokenAuth(this.username, this.password);
+        // Retry the request
+        const response = await this.client.post<T>(url, data, config);
+        return response.data;
+      }
+      throw error;
+    }
   }
 
   async patch<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
-    const response = await this.client.patch<T>(url, data, config);
-    return response.data;
+    try {
+      const response = await this.client.patch<T>(url, data, config);
+      return response.data;
+    } catch (error: any) {
+      // If 401 and we have JWT credentials, try to refresh token
+      if (error.response?.status === 401 && this.username && this.password && this.token) {
+        Logger.info('HttpClient: Token expired, refreshing...');
+        this.token = undefined;
+        this.tokenExpiry = undefined;
+        await this.setTokenAuth(this.username, this.password);
+        // Retry the request
+        const response = await this.client.patch<T>(url, data, config);
+        return response.data;
+      }
+      throw error;
+    }
   }
 
   async delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    const response = await this.client.delete<T>(url, config);
-    return response.data;
+    try {
+      const response = await this.client.delete<T>(url, config);
+      return response.data;
+    } catch (error: any) {
+      // If 401 and we have JWT credentials, try to refresh token
+      if (error.response?.status === 401 && this.username && this.password && this.token) {
+        Logger.info('HttpClient: Token expired, refreshing...');
+        this.token = undefined;
+        this.tokenExpiry = undefined;
+        await this.setTokenAuth(this.username, this.password);
+        // Retry the request
+        const response = await this.client.delete<T>(url, config);
+        return response.data;
+      }
+      throw error;
+    }
   }
 }

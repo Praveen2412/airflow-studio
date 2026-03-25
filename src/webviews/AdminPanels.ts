@@ -47,37 +47,37 @@ function page(title: string, tableHead: string, rows: string, formBody: string, 
   document.getElementById('btnCancel').addEventListener('click', function(){ document.getElementById('form').style.display='none'; });
   ${script}
   window.handleAction = function(btn){
-    console.log('[Airflow] Button clicked:', btn.dataset.action, btn.dataset);
+    console.log('[Airflow Studio] Button clicked:', btn.dataset.action, btn.dataset);
     const action = btn.dataset.action;
     if(action === 'delete'){
       if(btn.dataset.key){
-        console.log('[Airflow] Deleting variable:', btn.dataset.key);
+        console.log('[Airflow Studio] Deleting variable:', btn.dataset.key);
         if(confirm('Delete variable "' + btn.dataset.key + '"?')){
-          console.log('[Airflow] Sending delete message for variable');
+          console.log('[Airflow Studio] Sending delete message for variable');
           vscode.postMessage({command:'delete', key: btn.dataset.key});
         }
       } else if(btn.dataset.name){
-        console.log('[Airflow] Deleting pool:', btn.dataset.name);
+        console.log('[Airflow Studio] Deleting pool:', btn.dataset.name);
         if(confirm('Delete pool "' + btn.dataset.name + '"?')){
-          console.log('[Airflow] Sending delete message for pool');
+          console.log('[Airflow Studio] Sending delete message for pool');
           vscode.postMessage({command:'delete', name: btn.dataset.name});
         }
       } else if(btn.dataset.id){
-        console.log('[Airflow] Deleting connection:', btn.dataset.id);
+        console.log('[Airflow Studio] Deleting connection:', btn.dataset.id);
         if(confirm('Delete connection "' + btn.dataset.id + '"?')){
-          console.log('[Airflow] Sending delete message for connection');
+          console.log('[Airflow Studio] Sending delete message for connection');
           vscode.postMessage({command:'delete', connectionId: btn.dataset.id});
         }
       }
     } else if(action === 'edit'){
-      console.log('[Airflow] Editing item');
+      console.log('[Airflow Studio] Editing item');
       handleEdit(btn);
     }
   };
   document.addEventListener('click', function(e){
     const btn = e.target.closest('[data-action]');
     if(!btn) return;
-    console.log('[Airflow] Click event on button with action:', btn.dataset.action);
+    console.log('[Airflow Studio] Click event on button with action:', btn.dataset.action);
     handleAction(btn);
   });
 })();
@@ -100,48 +100,48 @@ export class VariablesPanel {
   private panel: vscode.WebviewPanel;
   private disposables: vscode.Disposable[] = [];
 
-  private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri) {
+  private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri, private serverId: string) {
     this.panel = vscode.window.createWebviewPanel('airflowVariables', 'Airflow Variables', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
     this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
     this.update();
   }
 
-  static show(serverManager: ServerManager, extensionUri: vscode.Uri) {
+  static show(serverManager: ServerManager, extensionUri: vscode.Uri, serverId: string) {
     if (VariablesPanel.instance) { VariablesPanel.instance.panel.reveal(); VariablesPanel.instance.update(); return; }
-    VariablesPanel.instance = new VariablesPanel(serverManager, extensionUri);
+    VariablesPanel.instance = new VariablesPanel(serverManager, extensionUri, serverId);
   }
 
   private async handleMessage(msg: any) {
-    console.log('[Airflow Extension] VariablesPanel.handleMessage called', msg);
+    console.log('[Airflow Studio] VariablesPanel.handleMessage called', msg);
     Logger.info('VariablesPanel.handleMessage', { command: msg.command, key: msg.key });
-    const client = await this.serverManager.getClient();
+    const client = await this.serverManager.getClient(this.serverId);
     if (!client) { 
-      console.error('[Airflow Extension] VariablesPanel: No client');
+      console.error('[Airflow Studio] VariablesPanel: No client');
       Logger.error('VariablesPanel: No client'); 
       return; 
     }
     try {
       if (msg.command === 'create' || msg.command === 'edit') {
-        console.log('[Airflow Extension] VariablesPanel: Upserting variable', msg.key);
+        console.log('[Airflow Studio] VariablesPanel: Upserting variable', msg.key);
         Logger.info('VariablesPanel: Upserting variable', { key: msg.key });
         await client.upsertVariable(msg.key, msg.value, msg.description);
         vscode.window.showInformationMessage(`Variable "${msg.key}" saved`);
         Logger.info('VariablesPanel: Variable saved', { key: msg.key });
       } else if (msg.command === 'delete') {
-        console.log('[Airflow Extension] VariablesPanel: Deleting variable', msg.key);
+        console.log('[Airflow Studio] VariablesPanel: Deleting variable', msg.key);
         Logger.info('VariablesPanel: Deleting variable', { key: msg.key });
         await client.deleteVariable(msg.key);
         vscode.window.showInformationMessage(`Variable "${msg.key}" deleted`);
         Logger.info('VariablesPanel: Variable deleted', { key: msg.key });
       } else if (msg.command === 'refresh') {
-        console.log('[Airflow Extension] VariablesPanel: Refreshing');
+        console.log('[Airflow Studio] VariablesPanel: Refreshing');
         Logger.info('VariablesPanel: Refreshing');
       }
-      console.log('[Airflow Extension] VariablesPanel: Calling update()');
+      console.log('[Airflow Studio] VariablesPanel: Calling update()');
       this.update();
     } catch (e: any) {
-      console.error('[Airflow Extension] VariablesPanel: Operation failed', e);
+      console.error('[Airflow Studio] VariablesPanel: Operation failed', e);
       Logger.error('VariablesPanel: Operation failed', e, { command: msg.command, key: msg.key });
       vscode.window.showErrorMessage(e.message);
     }
@@ -149,7 +149,7 @@ export class VariablesPanel {
 
   private async update() {
     try {
-      const client = await this.serverManager.getClient();
+      const client = await this.serverManager.getClient(this.serverId);
       if (!client) { this.panel.webview.html = errPage('No active server'); return; }
       const vars = await client.listVariables();
       this.panel.webview.html = this.getHtml(vars);
@@ -221,48 +221,48 @@ export class PoolsPanel {
   private panel: vscode.WebviewPanel;
   private disposables: vscode.Disposable[] = [];
 
-  private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri) {
+  private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri, private serverId: string) {
     this.panel = vscode.window.createWebviewPanel('airflowPools', 'Airflow Pools', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
     this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
     this.update();
   }
 
-  static show(serverManager: ServerManager, extensionUri: vscode.Uri) {
+  static show(serverManager: ServerManager, extensionUri: vscode.Uri, serverId: string) {
     if (PoolsPanel.instance) { PoolsPanel.instance.panel.reveal(); PoolsPanel.instance.update(); return; }
-    PoolsPanel.instance = new PoolsPanel(serverManager, extensionUri);
+    PoolsPanel.instance = new PoolsPanel(serverManager, extensionUri, serverId);
   }
 
   private async handleMessage(msg: any) {
-    console.log('[Airflow Extension] PoolsPanel.handleMessage called', msg);
+    console.log('[Airflow Studio] PoolsPanel.handleMessage called', msg);
     Logger.info('PoolsPanel.handleMessage', { command: msg.command, name: msg.name });
-    const client = await this.serverManager.getClient();
+    const client = await this.serverManager.getClient(this.serverId);
     if (!client) { 
-      console.error('[Airflow Extension] PoolsPanel: No client');
+      console.error('[Airflow Studio] PoolsPanel: No client');
       Logger.error('PoolsPanel: No client'); 
       return; 
     }
     try {
       if (msg.command === 'create' || msg.command === 'edit') {
-        console.log('[Airflow Extension] PoolsPanel: Upserting pool', msg.name);
+        console.log('[Airflow Studio] PoolsPanel: Upserting pool', msg.name);
         Logger.info('PoolsPanel: Upserting pool', { name: msg.name, slots: msg.slots });
         await client.upsertPool(msg.name, parseInt(msg.slots), msg.description);
         vscode.window.showInformationMessage(`Pool "${msg.name}" saved`);
         Logger.info('PoolsPanel: Pool saved', { name: msg.name });
       } else if (msg.command === 'delete') {
-        console.log('[Airflow Extension] PoolsPanel: Deleting pool', msg.name);
+        console.log('[Airflow Studio] PoolsPanel: Deleting pool', msg.name);
         Logger.info('PoolsPanel: Deleting pool', { name: msg.name });
         await client.deletePool(msg.name);
         vscode.window.showInformationMessage(`Pool "${msg.name}" deleted`);
         Logger.info('PoolsPanel: Pool deleted', { name: msg.name });
       } else if (msg.command === 'refresh') {
-        console.log('[Airflow Extension] PoolsPanel: Refreshing');
+        console.log('[Airflow Studio] PoolsPanel: Refreshing');
         Logger.info('PoolsPanel: Refreshing');
       }
-      console.log('[Airflow Extension] PoolsPanel: Calling update()');
+      console.log('[Airflow Studio] PoolsPanel: Calling update()');
       this.update();
     } catch (e: any) {
-      console.error('[Airflow Extension] PoolsPanel: Operation failed', e);
+      console.error('[Airflow Studio] PoolsPanel: Operation failed', e);
       Logger.error('PoolsPanel: Operation failed', e, { command: msg.command, name: msg.name });
       vscode.window.showErrorMessage(e.message);
     }
@@ -270,7 +270,7 @@ export class PoolsPanel {
 
   private async update() {
     try {
-      const client = await this.serverManager.getClient();
+      const client = await this.serverManager.getClient(this.serverId);
       if (!client) { this.panel.webview.html = errPage('No active server'); return; }
       const pools = await client.listPools();
       this.panel.webview.html = this.getHtml(pools);
@@ -342,30 +342,30 @@ export class ConnectionsPanel {
   private panel: vscode.WebviewPanel;
   private disposables: vscode.Disposable[] = [];
 
-  private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri) {
+  private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri, private serverId: string) {
     this.panel = vscode.window.createWebviewPanel('airflowConnections', 'Airflow Connections', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
     this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
     this.update();
   }
 
-  static show(serverManager: ServerManager, extensionUri: vscode.Uri) {
+  static show(serverManager: ServerManager, extensionUri: vscode.Uri, serverId: string) {
     if (ConnectionsPanel.instance) { ConnectionsPanel.instance.panel.reveal(); ConnectionsPanel.instance.update(); return; }
-    ConnectionsPanel.instance = new ConnectionsPanel(serverManager, extensionUri);
+    ConnectionsPanel.instance = new ConnectionsPanel(serverManager, extensionUri, serverId);
   }
 
   private async handleMessage(msg: any) {
-    console.log('[Airflow Extension] ConnectionsPanel.handleMessage called', msg);
+    console.log('[Airflow Studio] ConnectionsPanel.handleMessage called', msg);
     Logger.info('ConnectionsPanel.handleMessage', { command: msg.command, connectionId: msg.connectionId });
-    const client = await this.serverManager.getClient();
+    const client = await this.serverManager.getClient(this.serverId);
     if (!client) { 
-      console.error('[Airflow Extension] ConnectionsPanel: No client');
+      console.error('[Airflow Studio] ConnectionsPanel: No client');
       Logger.error('ConnectionsPanel: No client'); 
       return; 
     }
     try {
       if (msg.command === 'create' || msg.command === 'edit') {
-        console.log('[Airflow Extension] ConnectionsPanel: Upserting connection', msg.connectionId);
+        console.log('[Airflow Studio] ConnectionsPanel: Upserting connection', msg.connectionId);
         Logger.info('ConnectionsPanel: Upserting connection', { connectionId: msg.connectionId });
         await client.upsertConnection({
           connectionId: msg.connectionId, connType: msg.connType,
@@ -375,19 +375,19 @@ export class ConnectionsPanel {
         vscode.window.showInformationMessage(`Connection "${msg.connectionId}" saved`);
         Logger.info('ConnectionsPanel: Connection saved', { connectionId: msg.connectionId });
       } else if (msg.command === 'delete') {
-        console.log('[Airflow Extension] ConnectionsPanel: Deleting connection', msg.connectionId);
+        console.log('[Airflow Studio] ConnectionsPanel: Deleting connection', msg.connectionId);
         Logger.info('ConnectionsPanel: Deleting connection', { connectionId: msg.connectionId });
         await client.deleteConnection(msg.connectionId);
         vscode.window.showInformationMessage(`Connection "${msg.connectionId}" deleted`);
         Logger.info('ConnectionsPanel: Connection deleted', { connectionId: msg.connectionId });
       } else if (msg.command === 'refresh') {
-        console.log('[Airflow Extension] ConnectionsPanel: Refreshing');
+        console.log('[Airflow Studio] ConnectionsPanel: Refreshing');
         Logger.info('ConnectionsPanel: Refreshing');
       }
-      console.log('[Airflow Extension] ConnectionsPanel: Calling update()');
+      console.log('[Airflow Studio] ConnectionsPanel: Calling update()');
       this.update();
     } catch (e: any) {
-      console.error('[Airflow Extension] ConnectionsPanel: Operation failed', e);
+      console.error('[Airflow Studio] ConnectionsPanel: Operation failed', e);
       Logger.error('ConnectionsPanel: Operation failed', e, { command: msg.command, connectionId: msg.connectionId });
       vscode.window.showErrorMessage(e.message);
     }
@@ -395,7 +395,7 @@ export class ConnectionsPanel {
 
   private async update() {
     try {
-      const client = await this.serverManager.getClient();
+      const client = await this.serverManager.getClient(this.serverId);
       if (!client) { this.panel.webview.html = errPage('No active server'); return; }
       const conns = await client.listConnections();
       this.panel.webview.html = this.getHtml(conns);

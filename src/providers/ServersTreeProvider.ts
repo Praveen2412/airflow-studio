@@ -1,11 +1,17 @@
 import * as vscode from 'vscode';
-import { ServerProfile } from '../models';
+import { ServerProfile, DagSummary } from '../models';
 import { ServerManager } from '../managers/ServerManager';
 import { Logger } from '../utils/logger';
 
-export class ServersTreeProvider implements vscode.TreeDataProvider<ServerTreeItem | AddServerTreeItem> {
-  private _onDidChangeTreeData = new vscode.EventEmitter<ServerTreeItem | AddServerTreeItem | undefined>();
+type TreeItemType = ServerTreeItem | DagsFolderItem | AdminFolderItem | DagTreeItem | AdminItemTreeItem;
+
+export class ServersTreeProvider implements vscode.TreeDataProvider<TreeItemType> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<TreeItemType | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  private hiddenServers = new Set<string>();
+  private hiddenDagsFolders = new Set<string>();
+  private showOnlyFavoriteServers = false;
+  private showOnlyFavoriteDagsPerServer = new Map<string, boolean>();
 
   constructor(private serverManager: ServerManager) {
     Logger.debug('ServersTreeProvider: Initialized');
@@ -16,54 +22,185 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<ServerTreeIt
     this._onDidChangeTreeData.fire(undefined);
   }
 
-  getTreeItem(element: ServerTreeItem | AddServerTreeItem): vscode.TreeItem {
+  getTreeItem(element: TreeItemType): vscode.TreeItem {
     return element;
   }
 
-  async getChildren(element?: ServerTreeItem | AddServerTreeItem): Promise<(ServerTreeItem | AddServerTreeItem)[]> {
+  async getChildren(element?: TreeItemType): Promise<TreeItemType[]> {
     if (!element) {
       Logger.debug('ServersTreeProvider.getChildren: Loading servers');
-      const servers = await this.serverManager.getServers();
-      const activeServer = await this.serverManager.getActiveServer();
-      Logger.debug('ServersTreeProvider.getChildren: Loaded', { count: servers.length, activeId: activeServer?.id });
-      const items: (ServerTreeItem | AddServerTreeItem)[] = servers.map(s => new ServerTreeItem(s, s.id === activeServer?.id));
-      // Add "Add Server" button at the top
-      items.unshift(new AddServerTreeItem());
+      let servers = await this.serverManager.getServers();
+      
+      if (this.showOnlyFavoriteServers) {
+        servers = servers.filter(s => s.isFavorite);
+      }
+      
+      Logger.debug('ServersTreeProvider.getChildren: Loaded', { count: servers.length, showOnlyFavorites: this.showOnlyFavoriteServers });
+      const items: TreeItemType[] = servers.map(s => new ServerTreeItem(s, false, this.hiddenServers.has(s.id)));
       return items;
     }
+
+    if (element instanceof ServerTreeItem) {
+      const isHidden = this.hiddenServers.has(element.server.id);
+      if (isHidden) return [];
+      
+      return [
+        new DagsFolderItem(element.server, this.hiddenDagsFolders.has(element.server.id)),
+        new AdminFolderItem(element.server)
+      ];
+    }
+
+    if (element instanceof DagsFolderItem) {
+      const isHidden = this.hiddenDagsFolders.has(element.server.id);
+      if (isHidden) return [];
+      
+      try {
+        const client = await this.serverManager.getClient(element.server.id);
+        if (!client) return [];
+        let dags = await client.listDags();
+        
+        const showOnlyFavorites = this.showOnlyFavoriteDagsPerServer.get(element.server.id) || false;
+        if (showOnlyFavorites) {
+          const favoriteDags = element.server.favoriteDags || [];
+          dags = dags.filter(dag => favoriteDags.includes(dag.dagId));
+        }
+        
+        return dags.map(dag => new DagTreeItem(dag, element.server.id, element.server.favoriteDags?.includes(dag.dagId) || false));
+      } catch (error: any) {
+        Logger.error('Failed to load DAGs', error, { serverId: element.server.id });
+        return [];
+      }
+    }
+
+    if (element instanceof AdminFolderItem) {
+      return [
+        new AdminItemTreeItem('Variables', 'variables', element.server.id),
+        new AdminItemTreeItem('Pools', 'pools', element.server.id),
+        new AdminItemTreeItem('Connections', 'connections', element.server.id),
+        new AdminItemTreeItem('Health Check', 'health', element.server.id)
+      ];
+    }
+
     return [];
   }
-}
 
-class AddServerTreeItem extends vscode.TreeItem {
-  constructor() {
-    super('Add Server', vscode.TreeItemCollapsibleState.None);
-    this.contextValue = 'addServer';
-    this.command = {
-      command: 'airflow.addServerPanel',
-      title: 'Add Server'
-    };
-    this.iconPath = new vscode.ThemeIcon('add');
+  toggleServerVisibility(serverId: string): void {
+    if (this.hiddenServers.has(serverId)) {
+      this.hiddenServers.delete(serverId);
+    } else {
+      this.hiddenServers.add(serverId);
+    }
+    this.refresh();
+  }
+
+  toggleDagsVisibility(serverId: string): void {
+    if (this.hiddenDagsFolders.has(serverId)) {
+      this.hiddenDagsFolders.delete(serverId);
+    } else {
+      this.hiddenDagsFolders.add(serverId);
+    }
+    this.refresh();
+  }
+
+  toggleShowOnlyFavoriteServers(): void {
+    this.showOnlyFavoriteServers = !this.showOnlyFavoriteServers;
+    Logger.info('toggleShowOnlyFavoriteServers', { showOnlyFavorites: this.showOnlyFavoriteServers });
+    this.refresh();
+  }
+
+  toggleShowOnlyFavoriteDags(serverId: string): void {
+    const current = this.showOnlyFavoriteDagsPerServer.get(serverId) || false;
+    this.showOnlyFavoriteDagsPerServer.set(serverId, !current);
+    Logger.info('toggleShowOnlyFavoriteDags', { serverId, showOnlyFavorites: !current });
+    this.refresh();
   }
 }
 
 class ServerTreeItem extends vscode.TreeItem {
-  constructor(public readonly server: ServerProfile, isActive: boolean = false) {
-    super(server.name, vscode.TreeItemCollapsibleState.None);
+  constructor(public readonly server: ServerProfile, isActive: boolean = false, isHidden: boolean = false) {
+    super(server.name, isHidden ? vscode.TreeItemCollapsibleState.None : vscode.TreeItemCollapsibleState.Expanded);
     this.contextValue = 'server';
-    this.description = `${server.type === 'mwaa' ? 'MWAA' : 'Self-hosted'}${isActive ? ' (Active)' : ''}`;
-    this.tooltip = `${server.name}\n${server.baseUrl || server.awsRegion}\nAPI: ${server.apiMode}${isActive ? '\n\u2713 Active Server' : ''}`;
+    
+    const healthIcon = server.lastHealthStatus === 'healthy' ? '✓' : 
+                       server.lastHealthStatus === 'down' ? '✗' : 
+                       server.lastHealthStatus === 'degraded' ? '⚠' : '○';
+    
+    const favoriteIcon = server.isFavorite ? '⭐ ' : '';
+    
+    this.description = `${favoriteIcon}${server.type === 'mwaa' ? 'MWAA' : 'Self-hosted'} ${healthIcon}`;
+    this.tooltip = `${server.name}\n${server.baseUrl || server.awsRegion}\nAPI: ${server.apiMode}\nHealth: ${server.lastHealthStatus}${server.isFavorite ? '\n⭐ Favorite' : ''}`;
     
     const iconName = server.lastHealthStatus === 'healthy' ? 'pass' : 
                      server.lastHealthStatus === 'degraded' ? 'warning' : 
                      server.lastHealthStatus === 'down' ? 'error' : 'circle-outline';
-    this.iconPath = new vscode.ThemeIcon(iconName, isActive ? new vscode.ThemeColor('charts.green') : undefined);
     
-    // Click to open details
+    const iconColor = server.lastHealthStatus === 'healthy' ? new vscode.ThemeColor('testing.iconPassed') : 
+                      server.lastHealthStatus === 'down' ? new vscode.ThemeColor('testing.iconFailed') : 
+                      server.lastHealthStatus === 'degraded' ? new vscode.ThemeColor('testing.iconErrored') : undefined;
+    
+    this.iconPath = new vscode.ThemeIcon(iconName, iconColor);
+  }
+}
+
+class DagsFolderItem extends vscode.TreeItem {
+  constructor(public readonly server: ServerProfile, isHidden: boolean = false) {
+    super('DAGs', isHidden ? vscode.TreeItemCollapsibleState.None : vscode.TreeItemCollapsibleState.Expanded);
+    this.contextValue = 'dagsFolder';
+    this.iconPath = new vscode.ThemeIcon(isHidden ? 'eye-closed' : 'folder');
+    this.description = isHidden ? '(Hidden)' : '';
+  }
+}
+
+class AdminFolderItem extends vscode.TreeItem {
+  constructor(public readonly server: ServerProfile) {
+    super('Admin', vscode.TreeItemCollapsibleState.Collapsed);
+    this.contextValue = 'adminFolder';
+    this.iconPath = new vscode.ThemeIcon('tools');
+  }
+}
+
+class DagTreeItem extends vscode.TreeItem {
+  constructor(public readonly dag: DagSummary, public readonly serverId: string, public readonly isFavorite: boolean = false) {
+    super(dag.dagId, vscode.TreeItemCollapsibleState.None);
+    this.contextValue = 'dag';
+    
+    const favoriteIcon = isFavorite ? '⭐ ' : '';
+    this.description = `${favoriteIcon}${dag.paused ? '⏸ Paused' : '▶ Active'}`;
+    this.tooltip = `${dag.dagId}\nOwner: ${dag.owner || 'N/A'}\nSchedule: ${dag.schedule || 'None'}\nTags: ${dag.tags?.join(', ') || 'None'}${isFavorite ? '\n⭐ Favorite' : ''}`;
+    this.iconPath = new vscode.ThemeIcon(dag.paused ? 'debug-pause' : 'play');
     this.command = {
-      command: 'airflow.openServerDetails',
-      title: 'Open Server Details',
-      arguments: [this.server]
+      command: 'airflow.openDagDetails',
+      title: 'Open DAG Details',
+      arguments: [{ dag: this.dag, serverId: this.serverId }]
+    };
+  }
+}
+
+class AdminItemTreeItem extends vscode.TreeItem {
+  constructor(label: string, public readonly itemType: string, public readonly serverId: string) {
+    super(label, vscode.TreeItemCollapsibleState.None);
+    this.contextValue = 'adminItem';
+    
+    const iconMap: { [key: string]: string } = {
+      'variables': 'symbol-variable',
+      'pools': 'database',
+      'connections': 'plug',
+      'health': 'pulse'
+    };
+    
+    this.iconPath = new vscode.ThemeIcon(iconMap[itemType] || 'circle-outline');
+    
+    const commandMap: { [key: string]: string } = {
+      'variables': 'airflow.openVariablesPanel',
+      'pools': 'airflow.openPoolsPanel',
+      'connections': 'airflow.openConnectionsPanel',
+      'health': 'airflow.openHealthCheck'
+    };
+    
+    this.command = {
+      command: commandMap[itemType],
+      title: `Open ${label}`,
+      arguments: [{ serverId: this.serverId }]
     };
   }
 }

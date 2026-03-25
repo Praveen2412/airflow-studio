@@ -12,7 +12,8 @@ export class DagDetailsPanel {
   private constructor(
     private dagId: string,
     private serverManager: ServerManager,
-    extensionUri: vscode.Uri
+    extensionUri: vscode.Uri,
+    private serverId?: string
   ) {
     this.panel = vscode.window.createWebviewPanel(
       'airflowDagDetails', `DAG: ${dagId}`, vscode.ViewColumn.One,
@@ -23,16 +24,16 @@ export class DagDetailsPanel {
     this.update();
   }
 
-  static show(dagId: string, serverManager: ServerManager, extensionUri: vscode.Uri) {
+  static show(dagId: string, serverManager: ServerManager, extensionUri: vscode.Uri, serverId?: string) {
     const existing = DagDetailsPanel.panels.get(dagId);
     if (existing) { existing.panel.reveal(); existing.update(); return; }
-    const p = new DagDetailsPanel(dagId, serverManager, extensionUri);
+    const p = new DagDetailsPanel(dagId, serverManager, extensionUri, serverId);
     DagDetailsPanel.panels.set(dagId, p);
   }
 
   private async handleMessage(msg: any) {
     Logger.info('DagDetailsPanel.handleMessage', { command: msg.command, dagId: this.dagId });
-    const client = await this.serverManager.getClient();
+    const client = await this.serverManager.getClient(this.serverId);
     if (!client) { Logger.error('DagDetailsPanel: No client'); return; }
     try {
       switch (msg.command) {
@@ -114,7 +115,7 @@ export class DagDetailsPanel {
 
   private async update() {
     try {
-      const client = await this.serverManager.getClient();
+      const client = await this.serverManager.getClient(this.serverId);
       if (!client) { this.panel.webview.html = errHtml('No active server'); return; }
       const dag = await client.getDag(this.dagId);
       try { 
@@ -135,7 +136,7 @@ export class DagDetailsPanel {
 
   private async autoLoadTasksFromRuns() {
     try {
-      const client = await this.serverManager.getClient();
+      const client = await this.serverManager.getClient(this.serverId);
       if (!client) return;
       const runs = await client.listDagRuns(this.dagId, 25);
       this.panel.webview.postMessage({ command: 'updateDagRuns', runs });
@@ -161,7 +162,7 @@ export class DagDetailsPanel {
   private async loadDagRuns() {
     try {
       Logger.debug('DagDetailsPanel.loadDagRuns: Starting', { dagId: this.dagId });
-      const client = await this.serverManager.getClient();
+      const client = await this.serverManager.getClient(this.serverId);
       if (!client) return;
       const runs = await client.listDagRuns(this.dagId, 25);
       Logger.info('DagDetailsPanel.loadDagRuns: Success', { dagId: this.dagId, count: runs.length });
@@ -175,7 +176,7 @@ export class DagDetailsPanel {
   private async loadTasks(dagRunId: string) {
     try {
       Logger.debug('DagDetailsPanel.loadTasks: Starting', { dagId: this.dagId, dagRunId });
-      const client = await this.serverManager.getClient();
+      const client = await this.serverManager.getClient(this.serverId);
       if (!client) return;
       const tasks = await client.listTaskInstances(this.dagId, dagRunId);
       Logger.info('DagDetailsPanel.loadTasks: Success', { dagId: this.dagId, dagRunId, count: tasks.length });
@@ -189,7 +190,7 @@ export class DagDetailsPanel {
   private async loadTaskLogs(dagRunId: string, taskId: string, tryNumber: number, maxTries: number) {
     try {
       Logger.debug('DagDetailsPanel.loadTaskLogs: Starting', { dagId: this.dagId, dagRunId, taskId, tryNumber });
-      const client = await this.serverManager.getClient();
+      const client = await this.serverManager.getClient(this.serverId);
       if (!client) return;
       const logs = await client.getTaskLogs(this.dagId, taskId, dagRunId, tryNumber);
       Logger.info('DagDetailsPanel.loadTaskLogs: Success', { dagId: this.dagId, taskId, tryNumber, logLength: logs.length });
@@ -203,7 +204,7 @@ export class DagDetailsPanel {
   private async loadDagSource() {
     try {
       Logger.debug('DagDetailsPanel.loadDagSource: Starting', { dagId: this.dagId });
-      const client = await this.serverManager.getClient();
+      const client = await this.serverManager.getClient(this.serverId);
       if (!client) return;
       const source = await client.getDagSource(this.dagId);
       Logger.info('DagDetailsPanel.loadDagSource: Success', { dagId: this.dagId, sourceLength: source.length });

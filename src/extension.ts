@@ -1,8 +1,6 @@
 import * as vscode from 'vscode';
 import { ServerManager } from './managers/ServerManager';
 import { ServersTreeProvider } from './providers/ServersTreeProvider';
-import { DagsTreeProvider } from './providers/DagsTreeProvider';
-import { AdminTreeProvider } from './providers/AdminTreeProvider';
 import { ServerDetailsPanel, showAddServerPanel } from './webviews/ServerDetailsPanel';
 import { DagDetailsPanel } from './webviews/DagDetailsPanel';
 import { VariablesPanel, PoolsPanel, ConnectionsPanel } from './webviews/AdminPanels';
@@ -11,21 +9,18 @@ import { Logger } from './utils/logger';
 
 let serverManager: ServerManager;
 let serversTreeProvider: ServersTreeProvider;
-let dagsTreeProvider: DagsTreeProvider;
-let adminTreeProvider: AdminTreeProvider;
 let statusBarItem: vscode.StatusBarItem;
+let healthCheckInterval: NodeJS.Timeout | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
   try {
-    console.log('[Airflow] Extension activation started');
+    console.log('[Airflow Studio] Extension activation started');
     
-    // Initialize logger first
     Logger.initialize(context);
-    Logger.info('=== Airflow Extension Activation Started ===');
+    Logger.info('=== Airflow Studio Extension Activation Started ===');
     Logger.debug('VS Code version:', vscode.version);
     Logger.debug('Extension context available:', !!context);
 
-    // Initialize managers and providers
     Logger.debug('Creating ServerManager...');
     serverManager = new ServerManager(context);
     Logger.debug('ServerManager created successfully');
@@ -33,50 +28,36 @@ export function activate(context: vscode.ExtensionContext) {
     Logger.debug('Creating ServersTreeProvider...');
     serversTreeProvider = new ServersTreeProvider(serverManager);
     Logger.debug('ServersTreeProvider created successfully');
-    
-    Logger.debug('Creating DagsTreeProvider...');
-    dagsTreeProvider = new DagsTreeProvider(serverManager);
-    Logger.debug('DagsTreeProvider created successfully');
-    
-    Logger.debug('Creating AdminTreeProvider...');
-    adminTreeProvider = new AdminTreeProvider(serverManager);
-    Logger.debug('AdminTreeProvider created successfully');
 
-    // Register tree views
     Logger.debug('Registering tree data providers...');
     const serversDisposable = vscode.window.registerTreeDataProvider('airflowServers', serversTreeProvider);
     Logger.debug('Servers tree provider registered');
     
-    const dagsDisposable = vscode.window.registerTreeDataProvider('airflowDags', dagsTreeProvider);
-    Logger.debug('DAGs tree provider registered');
-    
-    const adminDisposable = vscode.window.registerTreeDataProvider('airflowAdmin', adminTreeProvider);
-    Logger.debug('Admin tree provider registered');
-    
-    context.subscriptions.push(serversDisposable, dagsDisposable, adminDisposable);
+    context.subscriptions.push(serversDisposable);
     Logger.info('All tree data providers registered successfully');
 
-    // Status bar
     Logger.debug('Creating status bar item...');
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-    statusBarItem.text = '$(cloud) Airflow';
+    statusBarItem.text = '$(cloud) Airflow Studio';
     statusBarItem.show();
     context.subscriptions.push(statusBarItem);
     Logger.debug('Status bar item created and shown');
 
-    // Register commands
     Logger.debug('Registering commands...');
     const commands = [
       { id: 'airflow.addServer', handler: addServer },
       { id: 'airflow.addServerPanel', handler: addServerPanel },
       { id: 'airflow.refreshServers', handler: refreshServers },
-      { id: 'airflow.setActiveServer', handler: setActiveServer },
+      { id: 'airflow.toggleShowOnlyFavoriteServers', handler: toggleShowOnlyFavoriteServers },
+      { id: 'airflow.toggleFavoriteServer', handler: toggleFavoriteServer },
+      { id: 'airflow.toggleShowOnlyFavoriteDags', handler: toggleShowOnlyFavoriteDags },
+      { id: 'airflow.toggleFavoriteDag', handler: toggleFavoriteDag },
+      { id: 'airflow.toggleServerVisibility', handler: toggleServerVisibility },
+      { id: 'airflow.toggleDagsVisibility', handler: toggleDagsVisibility },
       { id: 'airflow.editServer', handler: editServer },
       { id: 'airflow.deleteServer', handler: deleteServer },
       { id: 'airflow.testConnection', handler: testConnection },
       { id: 'airflow.openServerDetails', handler: openServerDetails },
-      { id: 'airflow.refreshDags', handler: refreshDags },
-      { id: 'airflow.refreshAdmin', handler: refreshAdmin },
       { id: 'airflow.openDag', handler: openDag },
       { id: 'airflow.openDagDetails', handler: openDagDetails },
       { id: 'airflow.triggerDag', handler: triggerDag },
@@ -100,16 +81,18 @@ export function activate(context: vscode.ExtensionContext) {
     });
     Logger.info(`Registered ${commands.length} commands successfully`);
 
-    // Load initial data
     Logger.debug('Loading active server...');
     loadActiveServer();
     
-    Logger.info('=== Airflow Extension Activated Successfully ===');
+    Logger.debug('Starting health check interval...');
+    startHealthCheckInterval();
+    
+    Logger.info('=== Airflow Studio Extension Activated Successfully ===');
     Logger.show();
-    console.log('[Airflow] Extension activated successfully');
+    console.log('[Airflow Studio] Extension activated successfully');
   } catch (error: any) {
-    const errorMsg = `Failed to activate Airflow extension: ${error?.message || error}`;
-    console.error('[Airflow] ACTIVATION FAILED:', error);
+    const errorMsg = `Failed to activate Airflow Studio extension: ${error?.message || error}`;
+    console.error('[Airflow Studio] ACTIVATION FAILED:', error);
     Logger.error('ACTIVATION FAILED', error);
     Logger.show();
     vscode.window.showErrorMessage(errorMsg);
@@ -120,50 +103,143 @@ export function activate(context: vscode.ExtensionContext) {
 async function loadActiveServer() {
   try {
     Logger.debug('loadActiveServer: Starting...');
-    const server = await serverManager.getActiveServer();
-    if (server) {
-      Logger.info('Active server loaded:', { name: server.name, type: server.type, id: server.id });
-      statusBarItem.text = `$(cloud) ${server.name}`;
-      await dagsTreeProvider.loadDags();
-      Logger.info('loadActiveServer: DAGs loaded');
+    const servers = await serverManager.getServers();
+    if (servers.length > 0) {
+      const healthyCount = servers.filter(s => s.lastHealthStatus === 'healthy').length;
+      statusBarItem.text = `$(cloud) Airflow Studio (${servers.length} server${servers.length > 1 ? 's' : ''}, ${healthyCount} healthy)`;
+      serversTreeProvider.refresh();
+      Logger.info('loadActiveServer: Tree refreshed');
     } else {
-      Logger.debug('No active server found');
-      statusBarItem.text = '$(cloud) Airflow';
+      Logger.debug('No servers found');
+      statusBarItem.text = '$(cloud) Airflow Studio';
     }
   } catch (error: any) {
-    Logger.error('Failed to load active server', error);
+    Logger.error('Failed to load servers', error);
+  }
+}
+
+function startHealthCheckInterval() {
+  updateAllServerHealth();
+  healthCheckInterval = setInterval(() => {
+    updateAllServerHealth();
+  }, 30000);
+}
+
+async function updateAllServerHealth() {
+  try {
+    Logger.debug('updateAllServerHealth: Starting');
+    const servers = await serverManager.getServers();
+    
+    for (const server of servers) {
+      try {
+        const client = await serverManager.getClient(server.id);
+        if (!client) continue;
+        
+        await client.getHealth();
+        if (server.lastHealthStatus !== 'healthy') {
+          server.lastHealthStatus = 'healthy';
+          await serverManager.updateServer(server);
+        }
+        Logger.debug('updateAllServerHealth: Server healthy', { serverId: server.id, name: server.name });
+      } catch (error: any) {
+        if (server.lastHealthStatus !== 'down') {
+          server.lastHealthStatus = 'down';
+          await serverManager.updateServer(server);
+        }
+        Logger.debug('updateAllServerHealth: Server down', { serverId: server.id, name: server.name });
+      }
+    }
+    
+    serversTreeProvider.refresh();
+    Logger.debug('updateAllServerHealth: Completed', { count: servers.length });
+  } catch (error: any) {
+    Logger.error('updateAllServerHealth: Failed', error);
   }
 }
 
 async function refreshServers() {
   Logger.info('=== USER ACTION: Refresh Servers ===');
-  serversTreeProvider.refresh();
+  await updateAllServerHealth();
   vscode.window.showInformationMessage('Servers refreshed');
 }
 
-async function setActiveServer(item: any) {
-  Logger.info('=== USER ACTION: Set Active Server ===');
-  const serverId = item?.server?.id;
-  Logger.debug('setActiveServer: Input', { serverId });
-  
-  if (!serverId) return;
-
-  try {
-    await serverManager.setActiveServer(serverId);
-    serversTreeProvider.refresh();
-    await loadActiveServer();
-    vscode.window.showInformationMessage(`✓ Server ${item.server.name} is now active`);
-    Logger.info('setActiveServer: Success', { serverId });
-  } catch (error: any) {
-    Logger.error('setActiveServer: Failed', error, { serverId });
-    vscode.window.showErrorMessage(`Failed to set active server: ${error.message}`);
-  }
+async function toggleShowOnlyFavoriteServers() {
+  Logger.info('=== USER ACTION: Toggle Show Only Favorite Servers ===');
+  serversTreeProvider.toggleShowOnlyFavoriteServers();
 }
 
-async function refreshAdmin() {
-  Logger.info('=== USER ACTION: Refresh Admin ===');
-  adminTreeProvider.refresh();
-  vscode.window.showInformationMessage('Admin view refreshed');
+async function toggleFavoriteServer(item: any) {
+  Logger.info('=== USER ACTION: Toggle Favorite Server ===');
+  const serverId = item?.server?.id;
+  if (!serverId) return;
+  
+  const servers = await serverManager.getServers();
+  const server = servers.find(s => s.id === serverId);
+  if (!server) return;
+  
+  server.isFavorite = !server.isFavorite;
+  await serverManager.updateServer(server);
+  
+  vscode.window.showInformationMessage(
+    server.isFavorite ? `⭐ ${server.name} added to favorites` : `${server.name} removed from favorites`
+  );
+  
+  serversTreeProvider.refresh();
+  Logger.info('toggleFavoriteServer: Success', { serverId, isFavorite: server.isFavorite });
+}
+
+async function toggleShowOnlyFavoriteDags(item: any) {
+  Logger.info('=== USER ACTION: Toggle Show Only Favorite DAGs ===');
+  const serverId = item?.server?.id;
+  if (!serverId) return;
+  
+  serversTreeProvider.toggleShowOnlyFavoriteDags(serverId);
+}
+
+async function toggleFavoriteDag(item: any) {
+  Logger.info('=== USER ACTION: Toggle Favorite DAG ===');
+  const dagId = item?.dag?.dagId;
+  const serverId = item?.serverId;
+  if (!dagId || !serverId) return;
+  
+  const servers = await serverManager.getServers();
+  const server = servers.find(s => s.id === serverId);
+  if (!server) return;
+  
+  if (!server.favoriteDags) {
+    server.favoriteDags = [];
+  }
+  
+  const index = server.favoriteDags.indexOf(dagId);
+  if (index > -1) {
+    server.favoriteDags.splice(index, 1);
+    vscode.window.showInformationMessage(`${dagId} removed from favorites`);
+  } else {
+    server.favoriteDags.push(dagId);
+    vscode.window.showInformationMessage(`⭐ ${dagId} added to favorites`);
+  }
+  
+  await serverManager.updateServer(server);
+  serversTreeProvider.refresh();
+  Logger.info('toggleFavoriteDag: Success', { dagId, serverId, isFavorite: index === -1 });
+}
+
+async function toggleServerVisibility(item: any) {
+  Logger.info('=== USER ACTION: Toggle Server Visibility ===');
+  const serverId = item?.server?.id;
+  if (!serverId) return;
+  
+  serversTreeProvider.toggleServerVisibility(serverId);
+  Logger.info('toggleServerVisibility: Toggled', { serverId });
+}
+
+async function toggleDagsVisibility(item: any) {
+  Logger.info('=== USER ACTION: Toggle DAGs Visibility ===');
+  const serverId = item?.server?.id;
+  if (!serverId) return;
+  
+  serversTreeProvider.toggleDagsVisibility(serverId);
+  Logger.info('toggleDagsVisibility: Toggled', { serverId });
 }
 
 async function addServerPanel() {
@@ -172,112 +248,90 @@ async function addServerPanel() {
 }
 
 async function addServer() {
-  Logger.info('addServer: Command invoked');
-  try {
-    const name = await vscode.window.showInputBox({ prompt: 'Server name' });
-    if (!name) {
-      Logger.debug('addServer: Cancelled - no name');
-      return;
-    }
-
-    const type = await vscode.window.showQuickPick(['self-hosted', 'mwaa'], { placeHolder: 'Server type' });
-    if (!type) {
-      Logger.debug('addServer: Cancelled - no type');
-      return;
-    }
-
-    let baseUrl = '';
-    let awsRegion = '';
-
-    if (type === 'self-hosted') {
-      const url = await vscode.window.showInputBox({ prompt: 'Base URL (e.g., http://localhost:8080)' });
-      if (!url) {
-        Logger.debug('addServer: Cancelled - no URL');
-        return;
-      }
-      baseUrl = url;
-    } else {
-      const env = await vscode.window.showInputBox({ prompt: 'MWAA environment name' });
-      if (!env) {
-        Logger.debug('addServer: Cancelled - no env');
-        return;
-      }
-      baseUrl = env;
-      
-      const region = await vscode.window.showInputBox({ prompt: 'AWS region', value: 'us-east-1' });
-      if (!region) {
-        Logger.debug('addServer: Cancelled - no region');
-        return;
-      }
-      awsRegion = region;
-    }
-
-    const username = await vscode.window.showInputBox({ prompt: 'Username (optional for MWAA)' });
-    const password = username ? await vscode.window.showInputBox({ prompt: 'Password', password: true }) : undefined;
-
-    const profile: ServerProfile = {
-      id: Date.now().toString(),
-      name,
-      type: type as 'self-hosted' | 'mwaa',
-      baseUrl,
-      awsRegion,
-      authType: type === 'mwaa' ? 'aws' : 'basic',
-      username,
-      apiMode: 'auto',
-      defaultRefreshInterval: 15,
-      lastHealthStatus: 'unknown'
-    };
-    Logger.debug('addServer: Profile created', { id: profile.id, name: profile.name });
-
-    await serverManager.addServer(profile, password);
-    await serverManager.setActiveServer(profile.id);
-    serversTreeProvider.refresh();
-    await loadActiveServer();
-    vscode.window.showInformationMessage(`Server ${name} added`);
-    Logger.info('addServer: Completed successfully', { serverId: profile.id });
-  } catch (error: any) {
-    Logger.error('addServer: Failed', error);
-    vscode.window.showErrorMessage(`Failed to add server: ${error.message}`);
-  }
+  Logger.info('addServer: Opening add server panel');
+  showAddServerPanel(serverManager, vscode.Uri.file(__dirname));
 }
 
-async function openServerDetails(server: ServerProfile) {
-  Logger.info('openServerDetails: Command invoked', { serverId: server.id });
-  ServerDetailsPanel.show(server.id, serverManager, vscode.Uri.file(__dirname));
-}
-
-async function openDagDetails(dag: any) {
-  const dagId = dag?.dagId || dag?.dag?.dagId;
-  if (!dagId) return;
-  Logger.info('openDagDetails: Command invoked', { dagId });
-  DagDetailsPanel.show(dagId, serverManager, vscode.Uri.file(__dirname));
-}
-
-async function openVariablesPanel() {
-  Logger.info('openVariablesPanel: Command invoked');
-  VariablesPanel.show(serverManager, vscode.Uri.file(__dirname));
-}
-
-async function openPoolsPanel() {
-  Logger.info('openPoolsPanel: Command invoked');
-  PoolsPanel.show(serverManager, vscode.Uri.file(__dirname));
-}
-
-async function openConnectionsPanel() {
-  Logger.info('openConnectionsPanel: Command invoked');
-  ConnectionsPanel.show(serverManager, vscode.Uri.file(__dirname));
+async function openServerDetails(item: any) {
+  const serverId = item?.server?.id || item?.id;
+  if (!serverId) return;
+  Logger.info('openServerDetails: Command invoked', { serverId });
+  ServerDetailsPanel.show(serverId, serverManager, vscode.Uri.file(__dirname));
 }
 
 async function editServer(item: any) {
-  vscode.window.showInformationMessage('Edit server - Not implemented yet');
+  const serverId = item?.server?.id;
+  if (!serverId) return;
+  Logger.info('editServer: Opening edit panel', { serverId });
+  ServerDetailsPanel.show(serverId, serverManager, vscode.Uri.file(__dirname));
+}
+
+async function openDagDetails(item: any) {
+  const dagId = item?.dag?.dagId;
+  const serverId = item?.serverId;
+  if (!dagId) return;
+  Logger.info('openDagDetails: Command invoked', { dagId, serverId });
+  DagDetailsPanel.show(dagId, serverManager, vscode.Uri.file(__dirname), serverId);
+}
+
+async function openVariablesPanel(item: any) {
+  Logger.info('openVariablesPanel: Command invoked');
+  const serverId = item?.serverId || await promptForServer();
+  if (!serverId) return;
+  VariablesPanel.show(serverManager, vscode.Uri.file(__dirname), serverId);
+}
+
+async function openPoolsPanel(item: any) {
+  Logger.info('openPoolsPanel: Command invoked');
+  const serverId = item?.serverId || await promptForServer();
+  if (!serverId) return;
+  PoolsPanel.show(serverManager, vscode.Uri.file(__dirname), serverId);
+}
+
+async function openConnectionsPanel(item: any) {
+  Logger.info('openConnectionsPanel: Command invoked');
+  const serverId = item?.serverId || await promptForServer();
+  if (!serverId) return;
+  ConnectionsPanel.show(serverManager, vscode.Uri.file(__dirname), serverId);
+}
+
+async function promptForServer(): Promise<string | undefined> {
+  const servers = await serverManager.getServers();
+  
+  if (servers.length === 0) {
+    vscode.window.showErrorMessage('No servers configured. Please add a server first.');
+    return undefined;
+  }
+  
+  if (servers.length === 1) {
+    return servers[0].id;
+  }
+  
+  const items = servers.map(s => ({
+    label: s.name,
+    description: `${s.type === 'mwaa' ? 'MWAA' : 'Self-hosted'} - ${s.lastHealthStatus === 'healthy' ? '✓ Healthy' : s.lastHealthStatus === 'down' ? '✗ Down' : '○ Unknown'}`,
+    detail: s.baseUrl || s.awsRegion,
+    serverId: s.id
+  }));
+  
+  const selected = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Select a server',
+    title: 'Choose Airflow Server'
+  });
+  
+  return selected?.serverId;
 }
 
 async function deleteServer(item: any) {
   const serverId = item?.server?.id;
   if (!serverId) return;
 
+  const servers = await serverManager.getServers();
+  const server = servers.find(s => s.id === serverId);
+  if (!server) return;
+
   const confirm = await vscode.window.showWarningMessage(
-    `Delete server ${item.server.name}?`,
+    `Delete server ${server.name}?`,
     { modal: true },
     'Delete'
   );
@@ -285,7 +339,6 @@ async function deleteServer(item: any) {
   if (confirm === 'Delete') {
     await serverManager.deleteServer(serverId);
     serversTreeProvider.refresh();
-    dagsTreeProvider.refresh();
     vscode.window.showInformationMessage('Server deleted');
   }
 }
@@ -311,15 +364,6 @@ async function testConnection(item: any) {
   }
 }
 
-async function refreshDags() {
-  Logger.info('=== USER ACTION: Refresh DAGs ===');
-  await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: 'Refreshing DAGs...' },
-    async () => await dagsTreeProvider.loadDags()
-  );
-  Logger.info('refreshDags: Completed');
-}
-
 async function openDag(item: any) {
   const dagId = item?.dag?.dagId;
   if (!dagId) return;
@@ -329,7 +373,8 @@ async function openDag(item: any) {
 async function triggerDag(item: any) {
   Logger.info('=== USER ACTION: Trigger DAG ===');
   const dagId = item?.dag?.dagId;
-  Logger.debug('triggerDag: Input', { dagId, itemType: typeof item });
+  const serverId = item?.serverId;
+  Logger.debug('triggerDag: Input', { dagId, serverId, itemType: typeof item });
   
   if (!dagId) {
     Logger.warn('triggerDag: No dagId provided');
@@ -357,7 +402,7 @@ async function triggerDag(item: any) {
 
   try {
     Logger.debug('triggerDag: Getting client...');
-    const client = await serverManager.getClient();
+    const client = await serverManager.getClient(serverId);
     if (!client) {
       Logger.error('triggerDag: No active server');
       vscode.window.showErrorMessage('No active server');
@@ -369,7 +414,7 @@ async function triggerDag(item: any) {
     await client.triggerDagRun(dagId, conf);
     vscode.window.showInformationMessage(`✓ DAG ${dagId} triggered`);
     Logger.info('triggerDag: Success', { dagId });
-    refreshDags();
+    serversTreeProvider.refresh();
   } catch (error: any) {
     Logger.error('triggerDag: Failed', error, { dagId });
     vscode.window.showErrorMessage(`Failed to trigger DAG: ${error.message}`);
@@ -379,19 +424,20 @@ async function triggerDag(item: any) {
 async function pauseDag(item: any) {
   Logger.info('=== USER ACTION: Pause DAG ===');
   const dagId = item?.dag?.dagId;
-  Logger.debug('pauseDag: Input', { dagId });
+  const serverId = item?.serverId;
+  Logger.debug('pauseDag: Input', { dagId, serverId });
   
   if (!dagId) return;
 
   try {
-    const client = await serverManager.getClient();
+    const client = await serverManager.getClient(serverId);
     if (!client) return;
 
     Logger.info('pauseDag: Calling API', { dagId });
     await client.pauseDag(dagId, true);
     vscode.window.showInformationMessage(`✓ DAG ${dagId} paused`);
     Logger.info('pauseDag: Success', { dagId });
-    refreshDags();
+    serversTreeProvider.refresh();
   } catch (error: any) {
     Logger.error('pauseDag: Failed', error, { dagId });
     vscode.window.showErrorMessage(`Failed to pause DAG: ${error.message}`);
@@ -401,19 +447,20 @@ async function pauseDag(item: any) {
 async function unpauseDag(item: any) {
   Logger.info('=== USER ACTION: Unpause DAG ===');
   const dagId = item?.dag?.dagId;
-  Logger.debug('unpauseDag: Input', { dagId });
+  const serverId = item?.serverId;
+  Logger.debug('unpauseDag: Input', { dagId, serverId });
   
   if (!dagId) return;
 
   try {
-    const client = await serverManager.getClient();
+    const client = await serverManager.getClient(serverId);
     if (!client) return;
 
     Logger.info('unpauseDag: Calling API', { dagId });
     await client.pauseDag(dagId, false);
     vscode.window.showInformationMessage(`✓ DAG ${dagId} unpaused`);
     Logger.info('unpauseDag: Success', { dagId });
-    refreshDags();
+    serversTreeProvider.refresh();
   } catch (error: any) {
     Logger.error('unpauseDag: Failed', error, { dagId });
     vscode.window.showErrorMessage(`Failed to unpause DAG: ${error.message}`);
@@ -423,7 +470,8 @@ async function unpauseDag(item: any) {
 async function deleteDag(item: any) {
   Logger.info('=== USER ACTION: Delete DAG ===');
   const dagId = item?.dag?.dagId;
-  Logger.debug('deleteDag: Input', { dagId });
+  const serverId = item?.serverId;
+  Logger.debug('deleteDag: Input', { dagId, serverId });
   
   if (!dagId) return;
 
@@ -435,14 +483,14 @@ async function deleteDag(item: any) {
 
   if (confirm === 'Delete') {
     try {
-      const client = await serverManager.getClient();
+      const client = await serverManager.getClient(serverId);
       if (!client) return;
 
       Logger.info('deleteDag: Calling API', { dagId });
       await client.deleteDag(dagId);
       vscode.window.showInformationMessage(`✓ DAG ${dagId} deleted`);
       Logger.info('deleteDag: Success', { dagId });
-      refreshDags();
+      serversTreeProvider.refresh();
     } catch (error: any) {
       Logger.error('deleteDag: Failed', error, { dagId });
       vscode.window.showErrorMessage(`Failed to delete DAG: ${error.message}`);
@@ -462,9 +510,12 @@ async function viewLogs() {
 
 async function openVariables() {
   try {
-    const client = await serverManager.getClient();
+    const serverId = await promptForServer();
+    if (!serverId) return;
+    
+    const client = await serverManager.getClient(serverId);
     if (!client) {
-      vscode.window.showErrorMessage('No active server');
+      vscode.window.showErrorMessage('Failed to connect to server');
       return;
     }
 
@@ -489,9 +540,12 @@ async function openVariables() {
 
 async function openPools() {
   try {
-    const client = await serverManager.getClient();
+    const serverId = await promptForServer();
+    if (!serverId) return;
+    
+    const client = await serverManager.getClient(serverId);
     if (!client) {
-      vscode.window.showErrorMessage('No active server');
+      vscode.window.showErrorMessage('Failed to connect to server');
       return;
     }
 
@@ -512,9 +566,12 @@ async function openPools() {
 
 async function openConnections() {
   try {
-    const client = await serverManager.getClient();
+    const serverId = await promptForServer();
+    if (!serverId) return;
+    
+    const client = await serverManager.getClient(serverId);
     if (!client) {
-      vscode.window.showErrorMessage('No active server');
+      vscode.window.showErrorMessage('Failed to connect to server');
       return;
     }
 
@@ -533,11 +590,14 @@ async function openConnections() {
   }
 }
 
-async function openHealthCheck() {
+async function openHealthCheck(item: any) {
   try {
-    const client = await serverManager.getClient();
+    const serverId = item?.serverId || await promptForServer();
+    if (!serverId) return;
+    
+    const client = await serverManager.getClient(serverId);
     if (!client) {
-      vscode.window.showErrorMessage('No active server');
+      vscode.window.showErrorMessage('Failed to connect to server');
       return;
     }
 
@@ -556,5 +616,8 @@ ${health.dagProcessor ? `DAG Processor: ${health.dagProcessor.status}` : ''}
 }
 
 export function deactivate() {
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+  }
   Logger.info('Extension deactivated');
 }
