@@ -3,7 +3,7 @@ import { ServerManager } from './managers/ServerManager';
 import { ServersTreeProvider } from './providers/ServersTreeProvider';
 import { ServerDetailsPanel, showAddServerPanel } from './webviews/ServerDetailsPanel';
 import { DagDetailsPanel } from './webviews/DagDetailsPanel';
-import { VariablesPanel, PoolsPanel, ConnectionsPanel } from './webviews/AdminPanels';
+import { VariablesPanel, PoolsPanel, ConnectionsPanel, ConfigPanel, PluginsPanel, ProvidersPanel } from './webviews/AdminPanels';
 import { ServerProfile } from './models';
 import { Logger } from './utils/logger';
 
@@ -72,6 +72,9 @@ export function activate(context: vscode.ExtensionContext) {
       { id: 'airflow.openPoolsPanel', handler: openPoolsPanel },
       { id: 'airflow.openConnections', handler: openConnections },
       { id: 'airflow.openConnectionsPanel', handler: openConnectionsPanel },
+      { id: 'airflow.openConfigPanel', handler: openConfigPanel },
+      { id: 'airflow.openPluginsPanel', handler: openPluginsPanel },
+      { id: 'airflow.openProvidersPanel', handler: openProvidersPanel },
       { id: 'airflow.openHealthCheck', handler: openHealthCheck }
     ];
     
@@ -293,6 +296,27 @@ async function openConnectionsPanel(item: any) {
   const serverId = item?.serverId || await promptForServer();
   if (!serverId) return;
   ConnectionsPanel.show(serverManager, vscode.Uri.file(__dirname), serverId);
+}
+
+async function openConfigPanel(item: any) {
+  Logger.info('openConfigPanel: Command invoked');
+  const serverId = item?.serverId || await promptForServer();
+  if (!serverId) return;
+  ConfigPanel.show(serverManager, vscode.Uri.file(__dirname), serverId);
+}
+
+async function openPluginsPanel(item: any) {
+  Logger.info('openPluginsPanel: Command invoked');
+  const serverId = item?.serverId || await promptForServer();
+  if (!serverId) return;
+  PluginsPanel.show(serverManager, vscode.Uri.file(__dirname), serverId);
+}
+
+async function openProvidersPanel(item: any) {
+  Logger.info('openProvidersPanel: Command invoked');
+  const serverId = item?.serverId || await promptForServer();
+  if (!serverId) return;
+  ProvidersPanel.show(serverManager, vscode.Uri.file(__dirname), serverId);
 }
 
 async function promptForServer(): Promise<string | undefined> {

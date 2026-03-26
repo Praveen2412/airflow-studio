@@ -5,7 +5,7 @@ export class Logger {
   private static logLevel: 'debug' | 'info' | 'warn' | 'error' = 'info'; // Changed default from 'debug' to 'info'
 
   static initialize(context: vscode.ExtensionContext) {
-    this.outputChannel = vscode.window.createOutputChannel('Airflow Extension');
+    this.outputChannel = vscode.window.createOutputChannel('Airflow Studio');
     context.subscriptions.push(this.outputChannel);
     this.updateLogLevel();
     this.info('Logger initialized');

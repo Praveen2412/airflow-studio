@@ -160,17 +160,35 @@ export class AirflowV2Client implements IAirflowClient {
     }
   }
 
+  async getRenderedTemplate(dagId: string, taskId: string, dagRunId: string, mapIndex?: number): Promise<any> {
+    try {
+      // Airflow v2 API uses GET on task instance endpoint with rendered_fields query param
+      let url = `/api/v2/dags/${dagId}/dagRuns/${dagRunId}/taskInstances/${taskId}`;
+      if (mapIndex !== undefined) url += `/${mapIndex}`;
+      const response = await this.http.get<any>(url);
+      Logger.debug('AirflowV2Client.getRenderedTemplate: Success', { dagId, taskId });
+      // Return the rendered_fields from the task instance
+      return response.rendered_fields || response.rendered || {};
+    } catch (error: any) {
+      Logger.error('AirflowV2Client.getRenderedTemplate: Failed', error, { dagId, taskId });
+      throw error;
+    }
+  }
+
   async clearTaskInstances(dagId: string, dagRunId: string, taskIds: string[], options?: ClearTaskOptions): Promise<void> {
     try {
+      // Airflow v2 API requires dry_run: false to actually clear tasks
       await this.http.post(`/api/v2/dags/${dagId}/clearTaskInstances`, {
+        dry_run: false,
+        reset_dag_runs: true,
         dag_run_id: dagRunId,
         task_ids: taskIds,
-        include_upstream: options?.includeUpstream,
-        include_downstream: options?.includeDownstream,
-        include_future: options?.includeFuture,
-        only_failed: options?.onlyFailed
+        include_upstream: options?.includeUpstream || false,
+        include_downstream: options?.includeDownstream || false,
+        include_future: options?.includeFuture || false,
+        only_failed: options?.onlyFailed || false
       });
-      Logger.info('AirflowV2Client.clearTaskInstances: Success', { dagId, dagRunId });
+      Logger.info('AirflowV2Client.clearTaskInstances: Success', { dagId, dagRunId, taskIds });
     } catch (error: any) {
       Logger.error('AirflowV2Client.clearTaskInstances: Failed', error, { dagId, dagRunId });
       throw error;
@@ -414,10 +432,11 @@ export class AirflowV2Client implements IAirflowClient {
 
   async setTaskInstanceState(dagId: string, dagRunId: string, taskId: string, state: string, mapIndex?: number): Promise<void> {
     try {
+      // Airflow v2 API uses PUT with new_state in body
       const url = mapIndex !== undefined 
         ? `/api/v2/dags/${dagId}/dagRuns/${dagRunId}/taskInstances/${taskId}/${mapIndex}`
         : `/api/v2/dags/${dagId}/dagRuns/${dagRunId}/taskInstances/${taskId}`;
-      await this.http.patch(url, { state });
+      await this.http.patch(url, { new_state: state });
       Logger.info('AirflowV2Client.setTaskInstanceState: Success', { dagId, taskId, state });
     } catch (error: any) {
       Logger.error('AirflowV2Client.setTaskInstanceState: Failed', error, { dagId, taskId });
@@ -462,6 +481,39 @@ export class AirflowV2Client implements IAirflowClient {
       Logger.info('AirflowV2Client.setDagRunState: Success', { dagId, dagRunId, state });
     } catch (error: any) {
       Logger.error('AirflowV2Client.setDagRunState: Failed', error, { dagId, dagRunId });
+      throw error;
+    }
+  }
+
+  async getConfig(): Promise<any> {
+    try {
+      const response = await this.http.get<any>('/api/v2/config');
+      Logger.debug('AirflowV2Client.getConfig: Success');
+      return response;
+    } catch (error: any) {
+      Logger.error('AirflowV2Client.getConfig: Failed', error);
+      throw error;
+    }
+  }
+
+  async listPlugins(): Promise<any[]> {
+    try {
+      const response = await this.http.get<any>('/api/v2/plugins');
+      Logger.debug('AirflowV2Client.listPlugins: Success', { count: response.plugins?.length });
+      return response.plugins || [];
+    } catch (error: any) {
+      Logger.error('AirflowV2Client.listPlugins: Failed', error);
+      throw error;
+    }
+  }
+
+  async listProviders(): Promise<any[]> {
+    try {
+      const response = await this.http.get<any>('/api/v2/providers');
+      Logger.debug('AirflowV2Client.listProviders: Success', { count: response.providers?.length });
+      return response.providers || [];
+    } catch (error: any) {
+      Logger.error('AirflowV2Client.listProviders: Failed', error);
       throw error;
     }
   }

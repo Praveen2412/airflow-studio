@@ -16,6 +16,7 @@ export interface IAirflowClient {
   // Task operations
   listTaskInstances(dagId: string, dagRunId: string): Promise<TaskInstance[]>;
   getTaskLogs(dagId: string, taskId: string, dagRunId: string, tryNumber: number, mapIndex?: number): Promise<string>;
+  getRenderedTemplate(dagId: string, taskId: string, dagRunId: string, mapIndex?: number): Promise<any>;
   clearTaskInstances(dagId: string, dagRunId: string, taskIds: string[], options?: ClearTaskOptions): Promise<void>;
   setTaskInstanceState(dagId: string, dagRunId: string, taskId: string, state: string, mapIndex?: number): Promise<void>;
   
@@ -37,10 +38,13 @@ export interface IAirflowClient {
   upsertConnection(connection: Connection): Promise<void>;
   deleteConnection(connectionId: string): Promise<void>;
   
-  // Health
+  // Config & Info
   getHealth(): Promise<HealthStatus>;
   getDagStats(): Promise<any>;
   getVersion(): Promise<string>;
+  getConfig(): Promise<any>;
+  listPlugins(): Promise<any[]>;
+  listProviders(): Promise<any[]>;
   
   // DAG Source
   getDagSource(dagId: string): Promise<string>;

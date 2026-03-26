@@ -77,6 +77,9 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeItemType
         new AdminItemTreeItem('Variables', 'variables', element.server.id),
         new AdminItemTreeItem('Pools', 'pools', element.server.id),
         new AdminItemTreeItem('Connections', 'connections', element.server.id),
+        new AdminItemTreeItem('Config', 'config', element.server.id),
+        new AdminItemTreeItem('Plugins', 'plugins', element.server.id),
+        new AdminItemTreeItem('Providers', 'providers', element.server.id),
         new AdminItemTreeItem('Health Check', 'health', element.server.id)
       ];
     }
@@ -164,9 +167,9 @@ class DagTreeItem extends vscode.TreeItem {
     super(dag.dagId, vscode.TreeItemCollapsibleState.None);
     this.contextValue = 'dag';
     
-    const favoriteIcon = isFavorite ? '⭐ ' : '';
+    const favoriteIcon = isFavorite ? '❤️ ' : '';
     this.description = `${favoriteIcon}${dag.paused ? '⏸ Paused' : '▶ Active'}`;
-    this.tooltip = `${dag.dagId}\nOwner: ${dag.owner || 'N/A'}\nSchedule: ${dag.schedule || 'None'}\nTags: ${dag.tags?.join(', ') || 'None'}${isFavorite ? '\n⭐ Favorite' : ''}`;
+    this.tooltip = `${dag.dagId}\nOwner: ${dag.owner || 'N/A'}\nSchedule: ${dag.schedule || 'None'}\nTags: ${dag.tags?.join(', ') || 'None'}${isFavorite ? '\n❤️ Favorite' : ''}`;
     this.iconPath = new vscode.ThemeIcon(dag.paused ? 'debug-pause' : 'play');
     this.command = {
       command: 'airflow.openDagDetails',
@@ -185,6 +188,9 @@ class AdminItemTreeItem extends vscode.TreeItem {
       'variables': 'symbol-variable',
       'pools': 'database',
       'connections': 'plug',
+      'config': 'settings-gear',
+      'plugins': 'extensions',
+      'providers': 'package',
       'health': 'pulse'
     };
     
@@ -194,6 +200,9 @@ class AdminItemTreeItem extends vscode.TreeItem {
       'variables': 'airflow.openVariablesPanel',
       'pools': 'airflow.openPoolsPanel',
       'connections': 'airflow.openConnectionsPanel',
+      'config': 'airflow.openConfigPanel',
+      'plugins': 'airflow.openPluginsPanel',
+      'providers': 'airflow.openProvidersPanel',
       'health': 'airflow.openHealthCheck'
     };
     

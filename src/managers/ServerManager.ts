@@ -40,7 +40,7 @@ export class ServerManager {
     const servers = await this.getServers();
     
     // Auto-detect API version
-    if (profile.type === 'self-hosted' && profile.apiMode === 'auto') {
+    if (profile.apiMode === 'auto') {
       profile.apiMode = await this.detectApiVersion(profile, password);
       Logger.info('ServerManager.addServer: API version detected', { apiMode: profile.apiMode });
     }
@@ -67,15 +67,28 @@ export class ServerManager {
   private async detectApiVersion(profile: ServerProfile, password?: string): Promise<'stable-v1' | 'stable-v2'> {
     try {
       Logger.debug('ServerManager.detectApiVersion: Testing v2');
-      const v2Client = await AirflowV2Client.create(profile.baseUrl, profile.username, password, profile.headers);
-      await v2Client.getHealth();
-      return 'stable-v2';
+      
+      if (profile.type === 'mwaa') {
+        const v2Client = new MwaaClient(profile.baseUrl, profile.awsRegion || 'us-east-1', 'v2');
+        await v2Client.getHealth();
+        return 'stable-v2';
+      } else {
+        const v2Client = await AirflowV2Client.create(profile.baseUrl, profile.username, password, profile.headers);
+        await v2Client.getHealth();
+        return 'stable-v2';
+      }
     } catch (error) {
       Logger.debug('ServerManager.detectApiVersion: v2 failed, trying v1');
       try {
-        const v1Client = new AirflowStableClient(profile.baseUrl, profile.username, password, profile.headers);
-        await v1Client.getHealth();
-        return 'stable-v1';
+        if (profile.type === 'mwaa') {
+          const v1Client = new MwaaClient(profile.baseUrl, profile.awsRegion || 'us-east-1', 'v1');
+          await v1Client.getHealth();
+          return 'stable-v1';
+        } else {
+          const v1Client = new AirflowStableClient(profile.baseUrl, profile.username, password, profile.headers);
+          await v1Client.getHealth();
+          return 'stable-v1';
+        }
       } catch (error2) {
         Logger.warn('ServerManager.detectApiVersion: Both versions failed, defaulting to v1');
         return 'stable-v1';
@@ -85,7 +98,8 @@ export class ServerManager {
 
   private async createClient(profile: ServerProfile, password?: string): Promise<IAirflowClient> {
     if (profile.type === 'mwaa') {
-      return new MwaaClient(profile.baseUrl, profile.awsRegion || 'us-east-1');
+      const apiVersion = profile.apiMode === 'stable-v2' ? 'v2' : 'v1';
+      return new MwaaClient(profile.baseUrl, profile.awsRegion || 'us-east-1', apiVersion);
     } else {
       if (profile.apiMode === 'stable-v2') {
         return await AirflowV2Client.create(profile.baseUrl, profile.username, password, profile.headers);

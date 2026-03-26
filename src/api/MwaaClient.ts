@@ -1,303 +1,245 @@
 import { IAirflowClient, ClearTaskOptions } from './IAirflowClient';
 import { DagSummary, DagRun, TaskInstance, Variable, Pool, Connection, HealthStatus } from '../models';
-import { MWAAClient, CreateCliTokenCommand } from '@aws-sdk/client-mwaa';
+import { MWAAClient, CreateWebLoginTokenCommand } from '@aws-sdk/client-mwaa';
 import { HttpClient } from './HttpClient';
+import { AirflowStableClient } from './AirflowStableClient';
+import { AirflowV2Client } from './AirflowV2Client';
+import { Logger } from '../utils/logger';
+import axios from 'axios';
 
 export class MwaaClient implements IAirflowClient {
   private mwaaClient: MWAAClient;
   private environmentName: string;
-  private http?: HttpClient;
+  private apiVersion: 'v1' | 'v2';
+  private delegateClient?: IAirflowClient;
   private webserverUrl?: string;
+  private tokenExpiry?: number;
 
-  constructor(environmentName: string, region: string) {
+  constructor(environmentName: string, region: string, apiVersion: 'v1' | 'v2' = 'v1') {
     this.environmentName = environmentName;
+    this.apiVersion = apiVersion;
     this.mwaaClient = new MWAAClient({ region });
+    Logger.info('MwaaClient: Initialized', { environmentName, region, apiVersion });
   }
 
-  private async getWebserverUrl(): Promise<string> {
-    if (this.webserverUrl) return this.webserverUrl;
-    
-    // Get environment details and CLI token
-    const command = new CreateCliTokenCommand({ Name: this.environmentName });
-    const response = await this.mwaaClient.send(command);
-    
-    this.webserverUrl = response.WebServerHostname || '';
-    const token = response.CliToken || '';
-    
-    this.http = new HttpClient(`https://${this.webserverUrl}`, {
-      'Authorization': `Bearer ${token}`
-    });
-    
-    return this.webserverUrl;
-  }
-
-  private async ensureClient(): Promise<HttpClient> {
-    if (!this.http) {
-      await this.getWebserverUrl();
+  private async refreshToken(): Promise<void> {
+    try {
+      Logger.debug('MwaaClient.refreshToken: Starting', { apiVersion: this.apiVersion });
+      
+      // Step 1: Get AWS Web Login Token
+      const command = new CreateWebLoginTokenCommand({ Name: this.environmentName });
+      const response = await this.mwaaClient.send(command);
+      
+      this.webserverUrl = response.WebServerHostname || '';
+      const webToken = response.WebToken || '';
+      
+      // Step 2: Exchange for JWT token via login endpoint
+      const loginPath = this.apiVersion === 'v1' 
+        ? '/aws_mwaa/login' 
+        : '/pluginsv2/aws_mwaa/login';
+      
+      const loginResponse = await axios.get(`https://${this.webserverUrl}${loginPath}`, {
+        params: { your_token_here: webToken },
+        maxRedirects: 0,
+        validateStatus: (status) => status >= 200 && status < 400
+      });
+      
+      // Step 3: Extract JWT token from _token cookie
+      const cookies = loginResponse.headers['set-cookie'] || [];
+      const jwtToken = cookies.find(c => c.startsWith('_token='))?.split('=')[1]?.split(';')[0];
+      
+      if (!jwtToken) {
+        throw new Error('Failed to extract JWT token from MWAA login response');
+      }
+      
+      // Step 4: Create delegate client (v1 or v2) with JWT token
+      const baseUrl = `https://${this.webserverUrl}`;
+      const headers = { 'Authorization': `Bearer ${jwtToken}` };
+      
+      if (this.apiVersion === 'v2') {
+        this.delegateClient = await AirflowV2Client.create(baseUrl, undefined, undefined, headers);
+        const httpClient = new HttpClient(baseUrl, headers);
+        (this.delegateClient as any).http = httpClient;
+      } else {
+        this.delegateClient = new AirflowStableClient(baseUrl, undefined, undefined, headers);
+        const httpClient = new HttpClient(baseUrl, headers);
+        (this.delegateClient as any).http = httpClient;
+      }
+      
+      // Cache token for 50 minutes (MWAA tokens typically valid for 60 minutes)
+      this.tokenExpiry = Date.now() + (50 * 60 * 1000);
+      
+      Logger.info('MwaaClient.refreshToken: Success', { apiVersion: this.apiVersion });
+    } catch (error: any) {
+      Logger.error('MwaaClient.refreshToken: Failed', error, { environmentName: this.environmentName });
+      throw error;
     }
-    return this.http!;
+  }
+
+  private async ensureClient(): Promise<IAirflowClient> {
+    if (!this.delegateClient || !this.tokenExpiry || Date.now() >= this.tokenExpiry) {
+      await this.refreshToken();
+    }
+    return this.delegateClient!;
   }
 
   async listDags(): Promise<DagSummary[]> {
-    const http = await this.ensureClient();
-    const response = await http.get<any>('/api/v1/dags?limit=100');
-    return response.dags.map((dag: any) => ({
-      dagId: dag.dag_id,
-      paused: dag.is_paused,
-      schedule: dag.schedule_interval,
-      owner: dag.owners?.[0] || 'unknown',
-      tags: dag.tags?.map((t: any) => t.name) || []
-    }));
+    const client = await this.ensureClient();
+    return client.listDags();
   }
 
   async getDag(dagId: string): Promise<DagSummary> {
-    const http = await this.ensureClient();
-    const dag = await http.get<any>(`/api/v1/dags/${dagId}`);
-    return {
-      dagId: dag.dag_id,
-      paused: dag.is_paused,
-      schedule: dag.schedule_interval,
-      owner: dag.owners?.[0] || 'unknown',
-      tags: dag.tags?.map((t: any) => t.name) || []
-    };
+    const client = await this.ensureClient();
+    return client.getDag(dagId);
   }
 
   async pauseDag(dagId: string, paused: boolean): Promise<void> {
-    const http = await this.ensureClient();
-    await http.patch(`/api/v1/dags/${dagId}`, { is_paused: paused });
+    const client = await this.ensureClient();
+    return client.pauseDag(dagId, paused);
   }
 
   async deleteDag(dagId: string): Promise<void> {
-    const http = await this.ensureClient();
-    await http.delete(`/api/v1/dags/${dagId}`);
+    const client = await this.ensureClient();
+    return client.deleteDag(dagId);
   }
 
   async getDagDetails(dagId: string): Promise<any> {
-    const http = await this.ensureClient();
-    const response = await http.get<any>(`/api/v1/dags/${dagId}/details`);
-    return response;
+    const client = await this.ensureClient();
+    return client.getDagDetails(dagId);
   }
 
   async listDagRuns(dagId: string, limit: number = 25): Promise<DagRun[]> {
-    const http = await this.ensureClient();
-    const response = await http.get<any>(`/api/v1/dags/${dagId}/dagRuns?limit=${limit}`);
-    return response.dag_runs.map((run: any) => ({
-      dagRunId: run.dag_run_id,
-      dagId: run.dag_id,
-      state: run.state,
-      executionDate: run.execution_date,
-      startDate: run.start_date,
-      endDate: run.end_date,
-      conf: run.conf
-    }));
+    const client = await this.ensureClient();
+    return client.listDagRuns(dagId, limit);
   }
 
   async triggerDagRun(dagId: string, conf?: any, logicalDate?: string): Promise<DagRun> {
-    const http = await this.ensureClient();
-    const payload: any = {};
-    if (conf) payload.conf = conf;
-    if (logicalDate) payload.logical_date = logicalDate;
-    
-    const run = await http.post<any>(`/api/v1/dags/${dagId}/dagRuns`, payload);
-    return {
-      dagRunId: run.dag_run_id,
-      dagId: run.dag_id,
-      state: run.state,
-      executionDate: run.execution_date,
-      conf: run.conf
-    };
+    const client = await this.ensureClient();
+    return client.triggerDagRun(dagId, conf, logicalDate);
   }
 
   async listTaskInstances(dagId: string, dagRunId: string): Promise<TaskInstance[]> {
-    const http = await this.ensureClient();
-    const response = await http.get<any>(`/api/v1/dags/${dagId}/dagRuns/${dagRunId}/taskInstances`);
-    return response.task_instances.map((task: any) => ({
-      taskId: task.task_id,
-      dagId: task.dag_id,
-      dagRunId: task.dag_run_id,
-      state: task.state,
-      tryNumber: task.try_number,
-      startDate: task.start_date,
-      endDate: task.end_date,
-      duration: task.duration,
-      mapIndex: task.map_index
-    }));
+    const client = await this.ensureClient();
+    return client.listTaskInstances(dagId, dagRunId);
   }
 
   async getTaskLogs(dagId: string, taskId: string, dagRunId: string, tryNumber: number, mapIndex?: number): Promise<string> {
-    const http = await this.ensureClient();
-    let url = `/api/v1/dags/${dagId}/dagRuns/${dagRunId}/taskInstances/${taskId}/logs/${tryNumber}`;
-    if (mapIndex !== undefined) {
-      url += `?map_index=${mapIndex}`;
-    }
-    const response = await http.get<any>(url);
-    return response.content || '';
+    const client = await this.ensureClient();
+    return client.getTaskLogs(dagId, taskId, dagRunId, tryNumber, mapIndex);
   }
 
   async clearTaskInstances(dagId: string, dagRunId: string, taskIds: string[], options?: ClearTaskOptions): Promise<void> {
-    const http = await this.ensureClient();
-    await http.post(`/api/v1/dags/${dagId}/clearTaskInstances`, {
-      dag_run_id: dagRunId,
-      task_ids: taskIds,
-      include_upstream: options?.includeUpstream,
-      include_downstream: options?.includeDownstream,
-      include_future: options?.includeFuture,
-      only_failed: options?.onlyFailed
-    });
+    const client = await this.ensureClient();
+    return client.clearTaskInstances(dagId, dagRunId, taskIds, options);
   }
 
   async listVariables(): Promise<Variable[]> {
-    const http = await this.ensureClient();
-    const response = await http.get<any>('/api/v1/variables?limit=100');
-    return response.variables.map((v: any) => ({
-      key: v.key,
-      value: v.value,
-      description: v.description
-    }));
+    const client = await this.ensureClient();
+    return client.listVariables();
   }
 
   async getVariable(key: string): Promise<Variable> {
-    const http = await this.ensureClient();
-    const v = await http.get<any>(`/api/v1/variables/${key}`);
-    return { key: v.key, value: v.value, description: v.description };
+    const client = await this.ensureClient();
+    return client.getVariable(key);
   }
 
   async upsertVariable(key: string, value: string, description?: string): Promise<void> {
-    const http = await this.ensureClient();
-    await http.patch(`/api/v1/variables/${key}`, { value, description });
+    const client = await this.ensureClient();
+    return client.upsertVariable(key, value, description);
   }
 
   async deleteVariable(key: string): Promise<void> {
-    const http = await this.ensureClient();
-    await http.delete(`/api/v1/variables/${key}`);
+    const client = await this.ensureClient();
+    return client.deleteVariable(key);
   }
 
   async listPools(): Promise<Pool[]> {
-    const http = await this.ensureClient();
-    const response = await http.get<any>('/api/v1/pools?limit=100');
-    return response.pools.map((p: any) => ({
-      name: p.name,
-      slots: p.slots,
-      occupiedSlots: p.occupied_slots,
-      runningSlots: p.running_slots,
-      queuedSlots: p.queued_slots,
-      description: p.description
-    }));
+    const client = await this.ensureClient();
+    return client.listPools();
   }
 
   async getPool(name: string): Promise<Pool> {
-    const http = await this.ensureClient();
-    const p = await http.get<any>(`/api/v1/pools/${name}`);
-    return {
-      name: p.name,
-      slots: p.slots,
-      occupiedSlots: p.occupied_slots,
-      runningSlots: p.running_slots,
-      queuedSlots: p.queued_slots,
-      description: p.description
-    };
+    const client = await this.ensureClient();
+    return client.getPool(name);
   }
 
   async upsertPool(name: string, slots: number, description?: string): Promise<void> {
-    const http = await this.ensureClient();
-    await http.patch(`/api/v1/pools/${name}`, { slots, description });
+    const client = await this.ensureClient();
+    return client.upsertPool(name, slots, description);
   }
 
   async deletePool(name: string): Promise<void> {
-    const http = await this.ensureClient();
-    await http.delete(`/api/v1/pools/${name}`);
+    const client = await this.ensureClient();
+    return client.deletePool(name);
   }
 
   async listConnections(): Promise<Connection[]> {
-    const http = await this.ensureClient();
-    const response = await http.get<any>('/api/v1/connections?limit=100');
-    return response.connections.map((c: any) => ({
-      connectionId: c.connection_id,
-      connType: c.conn_type,
-      host: c.host,
-      schema: c.schema,
-      login: c.login,
-      port: c.port,
-      extra: c.extra
-    }));
+    const client = await this.ensureClient();
+    return client.listConnections();
   }
 
   async getConnection(connectionId: string): Promise<Connection> {
-    const http = await this.ensureClient();
-    const c = await http.get<any>(`/api/v1/connections/${connectionId}`);
-    return {
-      connectionId: c.connection_id,
-      connType: c.conn_type,
-      host: c.host,
-      schema: c.schema,
-      login: c.login,
-      port: c.port,
-      extra: c.extra
-    };
+    const client = await this.ensureClient();
+    return client.getConnection(connectionId);
   }
 
   async upsertConnection(connection: Connection): Promise<void> {
-    const http = await this.ensureClient();
-    await http.patch(`/api/v1/connections/${connection.connectionId}`, {
-      conn_type: connection.connType,
-      host: connection.host,
-      schema: connection.schema,
-      login: connection.login,
-      port: connection.port,
-      extra: connection.extra
-    });
+    const client = await this.ensureClient();
+    return client.upsertConnection(connection);
   }
 
   async deleteConnection(connectionId: string): Promise<void> {
-    const http = await this.ensureClient();
-    await http.delete(`/api/v1/connections/${connectionId}`);
+    const client = await this.ensureClient();
+    return client.deleteConnection(connectionId);
   }
 
   async getHealth(): Promise<HealthStatus> {
-    const http = await this.ensureClient();
-    const health = await http.get<any>('/api/v1/health');
-    return {
-      metadatabase: { status: health.metadatabase?.status || 'unknown' },
-      scheduler: { 
-        status: health.scheduler?.status || 'unknown',
-        latestHeartbeat: health.scheduler?.latest_scheduler_heartbeat
-      },
-      triggerer: health.triggerer ? { status: health.triggerer.status } : undefined,
-      dagProcessor: health.dag_processor ? { status: health.dag_processor.status } : undefined
-    };
+    const client = await this.ensureClient();
+    return client.getHealth();
   }
 
   async getDagStats(): Promise<any> {
-    const http = await this.ensureClient();
-    const response = await http.get<any>('/api/v1/dags?limit=100');
-    const dags = response.dags || [];
-    return { total: dags.length, active: dags.filter((d: any) => !d.is_paused).length, paused: dags.filter((d: any) => d.is_paused).length };
+    const client = await this.ensureClient();
+    return client.getDagStats();
   }
 
   async getVersion(): Promise<string> {
-    try {
-      const http = await this.ensureClient();
-      const response = await http.get<any>('/api/v1/version');
-      return response.version || 'unknown';
-    } catch { return 'unknown'; }
+    const client = await this.ensureClient();
+    return client.getVersion();
   }
 
   async getDagSource(dagId: string): Promise<string> {
-    const http = await this.ensureClient();
-    const response = await http.get<any>(`/api/v1/dagSources/${dagId}`);
-    return response.content || '';
+    const client = await this.ensureClient();
+    return client.getDagSource(dagId);
   }
 
   async setTaskInstanceState(dagId: string, dagRunId: string, taskId: string, state: string, mapIndex?: number): Promise<void> {
-    const http = await this.ensureClient();
-    const url = mapIndex !== undefined 
-      ? `/api/v1/dags/${dagId}/dagRuns/${dagRunId}/taskInstances/${taskId}/${mapIndex}`
-      : `/api/v1/dags/${dagId}/dagRuns/${dagRunId}/taskInstances/${taskId}`;
-    await http.patch(url, { state });
+    const client = await this.ensureClient();
+    return client.setTaskInstanceState(dagId, dagRunId, taskId, state, mapIndex);
   }
 
   async setDagRunState(dagId: string, dagRunId: string, state: string): Promise<void> {
-    const http = await this.ensureClient();
-    await http.patch(`/api/v1/dags/${dagId}/dagRuns/${dagRunId}`, { state });
+    const client = await this.ensureClient();
+    return client.setDagRunState(dagId, dagRunId, state);
+  }
+
+  async getRenderedTemplate(dagId: string, taskId: string, dagRunId: string, mapIndex?: number): Promise<any> {
+    const client = await this.ensureClient();
+    return client.getRenderedTemplate(dagId, taskId, dagRunId, mapIndex);
+  }
+
+  async getConfig(): Promise<any> {
+    const client = await this.ensureClient();
+    return client.getConfig();
+  }
+
+  async listPlugins(): Promise<any[]> {
+    const client = await this.ensureClient();
+    return client.listPlugins();
+  }
+
+  async listProviders(): Promise<any[]> {
+    const client = await this.ensureClient();
+    return client.listProviders();
   }
 }

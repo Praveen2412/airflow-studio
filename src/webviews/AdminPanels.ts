@@ -51,23 +51,14 @@ function page(title: string, tableHead: string, rows: string, formBody: string, 
     const action = btn.dataset.action;
     if(action === 'delete'){
       if(btn.dataset.key){
-        console.log('[Airflow Studio] Deleting variable:', btn.dataset.key);
-        if(confirm('Delete variable "' + btn.dataset.key + '"?')){
-          console.log('[Airflow Studio] Sending delete message for variable');
-          vscode.postMessage({command:'delete', key: btn.dataset.key});
-        }
+        console.log('[Airflow Studio] Sending delete request for variable:', btn.dataset.key);
+        vscode.postMessage({command:'delete', key: btn.dataset.key});
       } else if(btn.dataset.name){
-        console.log('[Airflow Studio] Deleting pool:', btn.dataset.name);
-        if(confirm('Delete pool "' + btn.dataset.name + '"?')){
-          console.log('[Airflow Studio] Sending delete message for pool');
-          vscode.postMessage({command:'delete', name: btn.dataset.name});
-        }
+        console.log('[Airflow Studio] Sending delete request for pool:', btn.dataset.name);
+        vscode.postMessage({command:'delete', name: btn.dataset.name});
       } else if(btn.dataset.id){
-        console.log('[Airflow Studio] Deleting connection:', btn.dataset.id);
-        if(confirm('Delete connection "' + btn.dataset.id + '"?')){
-          console.log('[Airflow Studio] Sending delete message for connection');
-          vscode.postMessage({command:'delete', connectionId: btn.dataset.id});
-        }
+        console.log('[Airflow Studio] Sending delete request for connection:', btn.dataset.id);
+        vscode.postMessage({command:'delete', connectionId: btn.dataset.id});
       }
     } else if(action === 'edit'){
       console.log('[Airflow Studio] Editing item');
@@ -101,7 +92,7 @@ export class VariablesPanel {
   private disposables: vscode.Disposable[] = [];
 
   private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri, private serverId: string) {
-    this.panel = vscode.window.createWebviewPanel('airflowVariables', 'Airflow Variables', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
+    this.panel = vscode.window.createWebviewPanel('airflowVariables', 'Airflow Variables', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: false });
     this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
     this.update();
@@ -129,11 +120,19 @@ export class VariablesPanel {
         vscode.window.showInformationMessage(`Variable "${msg.key}" saved`);
         Logger.info('VariablesPanel: Variable saved', { key: msg.key });
       } else if (msg.command === 'delete') {
-        console.log('[Airflow Studio] VariablesPanel: Deleting variable', msg.key);
-        Logger.info('VariablesPanel: Deleting variable', { key: msg.key });
-        await client.deleteVariable(msg.key);
-        vscode.window.showInformationMessage(`Variable "${msg.key}" deleted`);
-        Logger.info('VariablesPanel: Variable deleted', { key: msg.key });
+        console.log('[Airflow Studio] VariablesPanel: Confirming delete for variable', msg.key);
+        const confirm = await vscode.window.showWarningMessage(
+          `Delete variable "${msg.key}"?`,
+          { modal: true },
+          'Delete'
+        );
+        if (confirm === 'Delete') {
+          console.log('[Airflow Studio] VariablesPanel: Deleting variable', msg.key);
+          Logger.info('VariablesPanel: Deleting variable', { key: msg.key });
+          await client.deleteVariable(msg.key);
+          vscode.window.showInformationMessage(`Variable "${msg.key}" deleted`);
+          Logger.info('VariablesPanel: Variable deleted', { key: msg.key });
+        }
       } else if (msg.command === 'refresh') {
         console.log('[Airflow Studio] VariablesPanel: Refreshing');
         Logger.info('VariablesPanel: Refreshing');
@@ -222,7 +221,7 @@ export class PoolsPanel {
   private disposables: vscode.Disposable[] = [];
 
   private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri, private serverId: string) {
-    this.panel = vscode.window.createWebviewPanel('airflowPools', 'Airflow Pools', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
+    this.panel = vscode.window.createWebviewPanel('airflowPools', 'Airflow Pools', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: false });
     this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
     this.update();
@@ -250,11 +249,19 @@ export class PoolsPanel {
         vscode.window.showInformationMessage(`Pool "${msg.name}" saved`);
         Logger.info('PoolsPanel: Pool saved', { name: msg.name });
       } else if (msg.command === 'delete') {
-        console.log('[Airflow Studio] PoolsPanel: Deleting pool', msg.name);
-        Logger.info('PoolsPanel: Deleting pool', { name: msg.name });
-        await client.deletePool(msg.name);
-        vscode.window.showInformationMessage(`Pool "${msg.name}" deleted`);
-        Logger.info('PoolsPanel: Pool deleted', { name: msg.name });
+        console.log('[Airflow Studio] PoolsPanel: Confirming delete for pool', msg.name);
+        const confirm = await vscode.window.showWarningMessage(
+          `Delete pool "${msg.name}"?`,
+          { modal: true },
+          'Delete'
+        );
+        if (confirm === 'Delete') {
+          console.log('[Airflow Studio] PoolsPanel: Deleting pool', msg.name);
+          Logger.info('PoolsPanel: Deleting pool', { name: msg.name });
+          await client.deletePool(msg.name);
+          vscode.window.showInformationMessage(`Pool "${msg.name}" deleted`);
+          Logger.info('PoolsPanel: Pool deleted', { name: msg.name });
+        }
       } else if (msg.command === 'refresh') {
         console.log('[Airflow Studio] PoolsPanel: Refreshing');
         Logger.info('PoolsPanel: Refreshing');
@@ -343,7 +350,7 @@ export class ConnectionsPanel {
   private disposables: vscode.Disposable[] = [];
 
   private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri, private serverId: string) {
-    this.panel = vscode.window.createWebviewPanel('airflowConnections', 'Airflow Connections', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
+    this.panel = vscode.window.createWebviewPanel('airflowConnections', 'Airflow Connections', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: false });
     this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
     this.update();
@@ -375,11 +382,19 @@ export class ConnectionsPanel {
         vscode.window.showInformationMessage(`Connection "${msg.connectionId}" saved`);
         Logger.info('ConnectionsPanel: Connection saved', { connectionId: msg.connectionId });
       } else if (msg.command === 'delete') {
-        console.log('[Airflow Studio] ConnectionsPanel: Deleting connection', msg.connectionId);
-        Logger.info('ConnectionsPanel: Deleting connection', { connectionId: msg.connectionId });
-        await client.deleteConnection(msg.connectionId);
-        vscode.window.showInformationMessage(`Connection "${msg.connectionId}" deleted`);
-        Logger.info('ConnectionsPanel: Connection deleted', { connectionId: msg.connectionId });
+        console.log('[Airflow Studio] ConnectionsPanel: Confirming delete for connection', msg.connectionId);
+        const confirm = await vscode.window.showWarningMessage(
+          `Delete connection "${msg.connectionId}"?`,
+          { modal: true },
+          'Delete'
+        );
+        if (confirm === 'Delete') {
+          console.log('[Airflow Studio] ConnectionsPanel: Deleting connection', msg.connectionId);
+          Logger.info('ConnectionsPanel: Deleting connection', { connectionId: msg.connectionId });
+          await client.deleteConnection(msg.connectionId);
+          vscode.window.showInformationMessage(`Connection "${msg.connectionId}" deleted`);
+          Logger.info('ConnectionsPanel: Connection deleted', { connectionId: msg.connectionId });
+        }
       } else if (msg.command === 'refresh') {
         console.log('[Airflow Studio] ConnectionsPanel: Refreshing');
         Logger.info('ConnectionsPanel: Refreshing');
@@ -477,6 +492,169 @@ export class ConnectionsPanel {
 
   private dispose() {
     ConnectionsPanel.instance = undefined;
+    this.panel.dispose();
+    while (this.disposables.length) this.disposables.pop()?.dispose();
+  }
+}
+
+export class ConfigPanel {
+  private static instance?: ConfigPanel;
+  private panel: vscode.WebviewPanel;
+  private disposables: vscode.Disposable[] = [];
+
+  private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri, private serverId: string) {
+    this.panel = vscode.window.createWebviewPanel('airflowConfig', 'Airflow Config', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: false });
+    this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
+    this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
+    this.update();
+  }
+
+  static show(serverManager: ServerManager, extensionUri: vscode.Uri, serverId: string) {
+    if (ConfigPanel.instance) { ConfigPanel.instance.panel.reveal(); ConfigPanel.instance.update(); return; }
+    ConfigPanel.instance = new ConfigPanel(serverManager, extensionUri, serverId);
+  }
+
+  private async handleMessage(msg: any) {
+    if (msg.command === 'refresh') {
+      this.update();
+    }
+  }
+
+  private async update() {
+    try {
+      const client = await this.serverManager.getClient(this.serverId);
+      if (!client) { this.panel.webview.html = errPage('No active server'); return; }
+      const config = await client.getConfig();
+      this.panel.webview.html = this.getHtml(config);
+    } catch (e: any) {
+      // Handle 403 when config is disabled by admin
+      if (e.response?.status === 403 || e.status === 403) {
+        this.panel.webview.html = errPage('Configuration endpoint is disabled by your Airflow administrator for security reasons.');
+      } else {
+        this.panel.webview.html = errPage(e.message);
+      }
+    }
+  }
+
+  private getHtml(config: any): string {
+    const configStr = JSON.stringify(config, null, 2);
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>${STYLES}</style></head><body>
+<h2>Airflow Configuration</h2>
+<button id="btnRefresh" title="Refresh configuration">🔄 Refresh</button>
+<pre style="background:var(--vscode-terminal-background);color:var(--vscode-terminal-foreground);padding:10px;border-radius:3px;overflow:auto;margin-top:10px">${esc(configStr)}</pre>
+<script>
+const vscode=acquireVsCodeApi();
+document.getElementById('btnRefresh').addEventListener('click',function(){vscode.postMessage({command:'refresh'});});
+</script>
+</body></html>`;
+  }
+
+  private dispose() {
+    ConfigPanel.instance = undefined;
+    this.panel.dispose();
+    while (this.disposables.length) this.disposables.pop()?.dispose();
+  }
+}
+
+export class PluginsPanel {
+  private static instance?: PluginsPanel;
+  private panel: vscode.WebviewPanel;
+  private disposables: vscode.Disposable[] = [];
+
+  private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri, private serverId: string) {
+    this.panel = vscode.window.createWebviewPanel('airflowPlugins', 'Airflow Plugins', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: false });
+    this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
+    this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
+    this.update();
+  }
+
+  static show(serverManager: ServerManager, extensionUri: vscode.Uri, serverId: string) {
+    if (PluginsPanel.instance) { PluginsPanel.instance.panel.reveal(); PluginsPanel.instance.update(); return; }
+    PluginsPanel.instance = new PluginsPanel(serverManager, extensionUri, serverId);
+  }
+
+  private async handleMessage(msg: any) {
+    if (msg.command === 'refresh') {
+      this.update();
+    }
+  }
+
+  private async update() {
+    try {
+      const client = await this.serverManager.getClient(this.serverId);
+      if (!client) { this.panel.webview.html = errPage('No active server'); return; }
+      const plugins = await client.listPlugins();
+      this.panel.webview.html = this.getHtml(plugins);
+    } catch (e: any) { this.panel.webview.html = errPage(e.message); }
+  }
+
+  private getHtml(plugins: any[]): string {
+    const rows = plugins.map(p => `<tr><td>${esc(p.name||'N/A')}</td><td>${esc(p.hooks||'N/A')}</td><td>${esc(p.executors||'N/A')}</td><td>${esc(p.macros||'N/A')}</td></tr>`).join('');
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>${STYLES}</style></head><body>
+<h2>Plugins (${plugins.length})</h2>
+<button id="btnRefresh" title="Refresh plugins list">🔄 Refresh</button>
+<table style="margin-top:10px"><thead><tr><th>Name</th><th>Hooks</th><th>Executors</th><th>Macros</th></tr></thead><tbody>${rows || '<tr><td colspan="4" style="text-align:center">No plugins found</td></tr>'}</tbody></table>
+<script>
+const vscode=acquireVsCodeApi();
+document.getElementById('btnRefresh').addEventListener('click',function(){vscode.postMessage({command:'refresh'});});
+</script>
+</body></html>`;
+  }
+
+  private dispose() {
+    PluginsPanel.instance = undefined;
+    this.panel.dispose();
+    while (this.disposables.length) this.disposables.pop()?.dispose();
+  }
+}
+
+export class ProvidersPanel {
+  private static instance?: ProvidersPanel;
+  private panel: vscode.WebviewPanel;
+  private disposables: vscode.Disposable[] = [];
+
+  private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri, private serverId: string) {
+    this.panel = vscode.window.createWebviewPanel('airflowProviders', 'Airflow Providers', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: false });
+    this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
+    this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
+    this.update();
+  }
+
+  static show(serverManager: ServerManager, extensionUri: vscode.Uri, serverId: string) {
+    if (ProvidersPanel.instance) { ProvidersPanel.instance.panel.reveal(); ProvidersPanel.instance.update(); return; }
+    ProvidersPanel.instance = new ProvidersPanel(serverManager, extensionUri, serverId);
+  }
+
+  private async handleMessage(msg: any) {
+    if (msg.command === 'refresh') {
+      this.update();
+    }
+  }
+
+  private async update() {
+    try {
+      const client = await this.serverManager.getClient(this.serverId);
+      if (!client) { this.panel.webview.html = errPage('No active server'); return; }
+      const providers = await client.listProviders();
+      this.panel.webview.html = this.getHtml(providers);
+    } catch (e: any) { this.panel.webview.html = errPage(e.message); }
+  }
+
+  private getHtml(providers: any[]): string {
+    const rows = providers.map(p => `<tr><td>${esc(p.package_name||'N/A')}</td><td>${esc(p.version||'N/A')}</td><td>${esc(p.description||'N/A')}</td></tr>`).join('');
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>${STYLES}</style></head><body>
+<h2>Providers (${providers.length})</h2>
+<button id="btnRefresh" title="Refresh providers list">🔄 Refresh</button>
+<table style="margin-top:10px"><thead><tr><th>Package Name</th><th>Version</th><th>Description</th></tr></thead><tbody>${rows || '<tr><td colspan="3" style="text-align:center">No providers found</td></tr>'}</tbody></table>
+<script>
+const vscode=acquireVsCodeApi();
+document.getElementById('btnRefresh').addEventListener('click',function(){vscode.postMessage({command:'refresh'});});
+</script>
+</body></html>`;
+  }
+
+  private dispose() {
+    ProvidersPanel.instance = undefined;
     this.panel.dispose();
     while (this.disposables.length) this.disposables.pop()?.dispose();
   }

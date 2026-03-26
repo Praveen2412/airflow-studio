@@ -444,6 +444,34 @@ export class AirflowStableClient implements IAirflowClient {
       throw error;
     }
   }
+
+  async getRenderedTemplate(dagId: string, taskId: string, dagRunId: string, mapIndex?: number): Promise<any> {
+    throw new Error('Rendered templates not supported in Airflow API v1');
+  }
+
+  async getConfig(): Promise<any> {
+    try {
+      const response = await this.http.get<any>('/api/v1/config');
+      return response;
+    } catch (error: any) {
+      Logger.error('AirflowStableClient.getConfig: Failed', error);
+      throw error;
+    }
+  }
+
+  async listPlugins(): Promise<any[]> {
+    try {
+      const response = await this.http.get<any>('/api/v1/plugins');
+      return response.plugins || [];
+    } catch (error: any) {
+      Logger.error('AirflowStableClient.listPlugins: Failed', error);
+      throw error;
+    }
+  }
+
+  async listProviders(): Promise<any[]> {
+    throw new Error('Providers endpoint not available in Airflow API v1');
+  }
 }
 
 function parseLogResponse(response: any): string {
