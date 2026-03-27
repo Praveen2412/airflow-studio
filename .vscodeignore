@@ -1,3 +1,4 @@
+# Development files
 .vscode/**
 .vscode-test/**
 src/**
@@ -6,15 +7,21 @@ tsconfig.json
 **/*.map
 **/*.ts
 !out/**/*.js
+
+# Logs and temporary files
 logs/**
+archive/**
+
+# Documentation (development only)
+docs/**
 .amazonq/**
 airflow_docs/**
-TRACKER.md
-IMPLEMENTATION.md
-INSTALLATION.md
-TECHNICAL_*.md
 dag_details_html.txt
+
+# Package files
 *.vsix
+
+# Node modules optimization
 node_modules/@types/**
 node_modules/.bin/**
 node_modules/**/*.md
@@ -34,3 +41,5 @@ node_modules/**/*.ts
 node_modules/**/*.flow
 node_modules/**/*.yml
 node_modules/**/*.yaml
+node_modules/**/benchmark/**
+node_modules/**/spec/**

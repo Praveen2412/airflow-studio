@@ -2,6 +2,8 @@ import { IAirflowClient, ClearTaskOptions } from './IAirflowClient';
 import { HttpClient } from './HttpClient';
 import { DagSummary, DagRun, TaskInstance, Variable, Pool, Connection, HealthStatus } from '../models';
 import { Logger } from '../utils/logger';
+import { Constants } from '../utils/constants';
+import { parseLogResponse } from '../utils/logParser';
 
 export class AirflowStableClient implements IAirflowClient {
   private http: HttpClient;
@@ -16,7 +18,7 @@ export class AirflowStableClient implements IAirflowClient {
 
   async listDags(): Promise<DagSummary[]> {
     try {
-      const response = await this.http.get<any>('/api/v1/dags?limit=100');
+      const response = await this.http.get<any>(`/api/v1/dags?limit=${Constants.DEFAULT_API_LIMIT}`);
       Logger.debug('AirflowStableClient.listDags: Success', { count: response.dags?.length });
       return response.dags.map((dag: any) => ({
       dagId: dag.dag_id,
@@ -71,16 +73,17 @@ export class AirflowStableClient implements IAirflowClient {
 
   async getDagDetails(dagId: string): Promise<any> {
     try {
-      const response = await this.http.get<any>(`/api/v1/dags/${dagId}/details`);
-      Logger.debug('AirflowStableClient.getDagDetails: Success', { dagId });
-      return response;
+      // Get DAG tasks structure - this works even when there are no runs
+      const response = await this.http.get<any>(`/api/v1/dags/${dagId}/tasks`);
+      Logger.debug('AirflowStableClient.getDagDetails: Success', { dagId, taskCount: response.tasks?.length });
+      return { tasks: response.tasks || [] };
     } catch (error: any) {
       Logger.error('AirflowStableClient.getDagDetails: Failed', error, { dagId });
       throw error;
     }
   }
 
-  async listDagRuns(dagId: string, limit: number = 25): Promise<DagRun[]> {
+  async listDagRuns(dagId: string, limit: number = Constants.DEFAULT_DAG_RUN_LIMIT): Promise<DagRun[]> {
     try {
       const response = await this.http.get<any>(`/api/v1/dags/${dagId}/dagRuns?limit=${limit}`);
       Logger.debug('AirflowStableClient.listDagRuns: Success', { dagId, count: response.dag_runs?.length });
@@ -174,7 +177,7 @@ export class AirflowStableClient implements IAirflowClient {
 
   async listVariables(): Promise<Variable[]> {
     try {
-      const response = await this.http.get<any>('/api/v1/variables?limit=100');
+      const response = await this.http.get<any>(`/api/v1/variables?limit=${Constants.DEFAULT_API_LIMIT}`);
       Logger.debug('AirflowStableClient.listVariables: Success', { count: response.variables?.length });
       return response.variables.map((v: any) => ({
         key: v.key,
@@ -228,7 +231,7 @@ export class AirflowStableClient implements IAirflowClient {
 
   async listPools(): Promise<Pool[]> {
     try {
-      const response = await this.http.get<any>('/api/v1/pools?limit=100');
+      const response = await this.http.get<any>(`/api/v1/pools?limit=${Constants.DEFAULT_API_LIMIT}`);
       Logger.debug('AirflowStableClient.listPools: Success', { count: response.pools?.length });
       return response.pools.map((p: any) => ({
         name: p.name,
@@ -292,7 +295,7 @@ export class AirflowStableClient implements IAirflowClient {
 
   async listConnections(): Promise<Connection[]> {
     try {
-      const response = await this.http.get<any>('/api/v1/connections?limit=100');
+      const response = await this.http.get<any>(`/api/v1/connections?limit=${Constants.DEFAULT_API_LIMIT}`);
       Logger.debug('AirflowStableClient.listConnections: Success', { count: response.connections?.length });
       return response.connections.map((c: any) => ({
         connectionId: c.connection_id,
@@ -386,7 +389,7 @@ export class AirflowStableClient implements IAirflowClient {
 
   async getDagStats(): Promise<any> {
     try {
-      const response = await this.http.get<any>('/api/v1/dags?limit=100');
+      const response = await this.http.get<any>(`/api/v1/dags?limit=${Constants.DEFAULT_API_LIMIT}`);
       // v1 has no dagStats endpoint - compute from dag list
       const dags = response.dags || [];
       return { total: dags.length, active: dags.filter((d: any) => !d.is_paused).length, paused: dags.filter((d: any) => d.is_paused).length };
@@ -472,28 +475,4 @@ export class AirflowStableClient implements IAirflowClient {
   async listProviders(): Promise<any[]> {
     throw new Error('Providers endpoint not available in Airflow API v1');
   }
-}
-
-function parseLogResponse(response: any): string {
-  if (!response) return '';
-  if (typeof response === 'string') return response;
-  // v1 API returns { content: [[timestamp, message], ...] } or { content: string }
-  if (response.content) {
-    if (typeof response.content === 'string') return response.content;
-    if (Array.isArray(response.content)) {
-      return response.content.map((entry: any) => {
-        if (typeof entry === 'string') return entry;
-        if (Array.isArray(entry)) return entry.join(' '); // [timestamp, message]
-        return entry.message || entry.content || JSON.stringify(entry);
-      }).join('\n');
-    }
-  }
-  if (Array.isArray(response)) {
-    return response.map((entry: any) => {
-      if (typeof entry === 'string') return entry;
-      if (Array.isArray(entry)) return entry.join(' ');
-      return entry.message || entry.content || JSON.stringify(entry);
-    }).join('\n');
-  }
-  return JSON.stringify(response, null, 2);
 }

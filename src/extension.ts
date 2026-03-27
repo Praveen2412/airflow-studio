@@ -6,10 +6,12 @@ import { DagDetailsPanel } from './webviews/DagDetailsPanel';
 import { VariablesPanel, PoolsPanel, ConnectionsPanel, ConfigPanel, PluginsPanel, ProvidersPanel } from './webviews/AdminPanels';
 import { ServerProfile } from './models';
 import { Logger } from './utils/logger';
+import { Constants, registerConfigurationListener } from './utils/constants';
+import { StatusBarManager } from './utils/statusBarManager';
 
 let serverManager: ServerManager;
 let serversTreeProvider: ServersTreeProvider;
-let statusBarItem: vscode.StatusBarItem;
+let statusBarManager: StatusBarManager;
 let healthCheckInterval: NodeJS.Timeout | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
@@ -20,6 +22,10 @@ export function activate(context: vscode.ExtensionContext) {
     Logger.info('=== Airflow Studio Extension Activation Started ===');
     Logger.debug('VS Code version:', vscode.version);
     Logger.debug('Extension context available:', !!context);
+
+    // Register configuration listener
+    registerConfigurationListener(context);
+    Logger.debug('Configuration listener registered');
 
     Logger.debug('Creating ServerManager...');
     serverManager = new ServerManager(context);
@@ -36,12 +42,9 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(serversDisposable);
     Logger.info('All tree data providers registered successfully');
 
-    Logger.debug('Creating status bar item...');
-    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-    statusBarItem.text = '$(cloud) Airflow Studio';
-    statusBarItem.show();
-    context.subscriptions.push(statusBarItem);
-    Logger.debug('Status bar item created and shown');
+    Logger.debug('Creating status bar manager...');
+    statusBarManager = new StatusBarManager(context);
+    Logger.debug('Status bar manager created');
 
     Logger.debug('Registering commands...');
     const commands = [
@@ -107,17 +110,16 @@ async function loadActiveServer() {
   try {
     Logger.debug('loadActiveServer: Starting...');
     const servers = await serverManager.getServers();
+    statusBarManager.updateServerCount(servers);
     if (servers.length > 0) {
-      const healthyCount = servers.filter(s => s.lastHealthStatus === 'healthy').length;
-      statusBarItem.text = `$(cloud) Airflow Studio (${servers.length} server${servers.length > 1 ? 's' : ''}, ${healthyCount} healthy)`;
       serversTreeProvider.refresh();
       Logger.info('loadActiveServer: Tree refreshed');
     } else {
       Logger.debug('No servers found');
-      statusBarItem.text = '$(cloud) Airflow Studio';
     }
   } catch (error: any) {
     Logger.error('Failed to load servers', error);
+    statusBarManager.showError('Failed to load servers');
   }
 }
 
@@ -125,7 +127,8 @@ function startHealthCheckInterval() {
   updateAllServerHealth();
   healthCheckInterval = setInterval(() => {
     updateAllServerHealth();
-  }, 30000);
+  }, Constants.HEALTH_CHECK_INTERVAL);
+  Logger.debug('Health check interval started', { intervalMs: Constants.HEALTH_CHECK_INTERVAL });
 }
 
 async function updateAllServerHealth() {
@@ -133,28 +136,54 @@ async function updateAllServerHealth() {
     Logger.debug('updateAllServerHealth: Starting');
     const servers = await serverManager.getServers();
     
-    for (const server of servers) {
+    // Parallel health checks using Promise.allSettled
+    const healthCheckPromises = servers.map(async (server) => {
       try {
         const client = await serverManager.getClient(server.id);
-        if (!client) continue;
+        if (!client) {
+          return { serverId: server.id, status: 'down' as const };
+        }
         
         await client.getHealth();
-        if (server.lastHealthStatus !== 'healthy') {
-          server.lastHealthStatus = 'healthy';
-          await serverManager.updateServer(server);
-        }
         Logger.debug('updateAllServerHealth: Server healthy', { serverId: server.id, name: server.name });
+        return { serverId: server.id, status: 'healthy' as const };
       } catch (error: any) {
+        Logger.debug('updateAllServerHealth: Server down', { serverId: server.id, name: server.name });
+        return { serverId: server.id, status: 'down' as const };
+      }
+    });
+    
+    const results = await Promise.allSettled(healthCheckPromises);
+    
+    // Update server statuses based on results
+    let updated = false;
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const server = servers[i];
+      
+      if (result.status === 'fulfilled') {
+        const { status } = result.value;
+        if (server.lastHealthStatus !== status) {
+          server.lastHealthStatus = status;
+          await serverManager.updateServer(server);
+          updated = true;
+        }
+      } else {
+        // Promise rejected - mark as down
         if (server.lastHealthStatus !== 'down') {
           server.lastHealthStatus = 'down';
           await serverManager.updateServer(server);
+          updated = true;
         }
-        Logger.debug('updateAllServerHealth: Server down', { serverId: server.id, name: server.name });
       }
     }
     
-    serversTreeProvider.refresh();
-    Logger.debug('updateAllServerHealth: Completed', { count: servers.length });
+    if (updated) {
+      serversTreeProvider.refresh();
+      statusBarManager.updateServerCount(servers);
+    }
+    
+    Logger.debug('updateAllServerHealth: Completed', { count: servers.length, updated });
   } catch (error: any) {
     Logger.error('updateAllServerHealth: Failed', error);
   }

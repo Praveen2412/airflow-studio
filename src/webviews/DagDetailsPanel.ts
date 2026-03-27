@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { DagSummary } from '../models';
 import { ServerManager } from '../managers/ServerManager';
 import { Logger } from '../utils/logger';
+import { Constants } from '../utils/constants';
 
 export class DagDetailsPanel {
   private static panels = new Map<string, DagDetailsPanel>();
@@ -19,6 +20,10 @@ export class DagDetailsPanel {
       'airflowDagDetails', `DAG: ${dagId}`, vscode.ViewColumn.One,
       { enableScripts: true, retainContextWhenHidden: false }
     );
+    this.panel.iconPath = {
+      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg'),
+      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg')
+    };
     this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
     this.update();
@@ -42,7 +47,7 @@ export class DagDetailsPanel {
           await client.triggerDagRun(this.dagId, msg.conf || undefined, msg.logicalDate || undefined);
           vscode.window.showInformationMessage(`DAG ${this.dagId} triggered`);
           Logger.info('DagDetailsPanel: DAG triggered successfully', { dagId: this.dagId });
-          setTimeout(() => this.loadDagRuns(25), 1000);
+          setTimeout(() => this.loadDagRuns(Constants.DEFAULT_DAG_RUN_LIMIT), Constants.TASK_REFRESH_DELAY);
           break;
         case 'pause':
           Logger.info('DagDetailsPanel: Pausing DAG', { dagId: this.dagId });
@@ -83,7 +88,7 @@ export class DagDetailsPanel {
             vscode.window.showInformationMessage(`Task ${msg.taskId} cleared`);
             Logger.info('DagDetailsPanel: Task cleared successfully', { dagId: this.dagId, taskId: msg.taskId });
             // Refresh tasks after a short delay to allow Airflow to process
-            setTimeout(() => this.loadTasks(msg.dagRunId), 1000);
+            setTimeout(() => this.loadTasks(msg.dagRunId), Constants.TASK_REFRESH_DELAY);
           }
           break;
         case 'setTaskState':
@@ -99,7 +104,7 @@ export class DagDetailsPanel {
             vscode.window.showInformationMessage(`Task ${msg.taskId} set to ${msg.state}`);
             Logger.info('DagDetailsPanel: Task state set successfully', { dagId: this.dagId, taskId: msg.taskId, state: msg.state });
             // Refresh tasks after a short delay
-            setTimeout(() => this.loadTasks(msg.dagRunId), 1000);
+            setTimeout(() => this.loadTasks(msg.dagRunId), Constants.TASK_REFRESH_DELAY);
           }
           break;
         case 'setDagRunState':
@@ -156,26 +161,39 @@ export class DagDetailsPanel {
         this.dagDetails = null; 
       }
       this.panel.webview.html = this.getHtml(dag);
-      // Auto-load DAG runs and first run's tasks
-      setTimeout(() => this.autoLoadTasksFromRuns(), 500);
+      // Always try to load task structure
+      setTimeout(() => this.loadTaskStructure(), Constants.WEBVIEW_UPDATE_DELAY);
     } catch (error: any) {
       Logger.error('DagDetailsPanel.update: Failed', error, { dagId: this.dagId });
       this.panel.webview.html = errHtml(error.message);
     }
   }
 
-  private async autoLoadTasksFromRuns() {
+  private async loadTaskStructure() {
     try {
       const client = await this.serverManager.getClient(this.serverId);
       if (!client) return;
-      const runs = await client.listDagRuns(this.dagId, 25);
+      
+      // Priority 1: Use task structure from details API if available
+      if (this.dagDetails && this.dagDetails.tasks && this.dagDetails.tasks.length > 0) {
+        Logger.debug('DagDetailsPanel.loadTaskStructure: Using task structure from details API', { count: this.dagDetails.tasks.length });
+        const taskStructure = this.dagDetails.tasks.map((t: any) => ({
+          task_id: t.task_id || t.taskId || '',
+          task_type: t.task_type || t.operator_name || t.taskType || 'Task',
+          downstream_task_ids: t.downstream_task_ids || t.downstreamTaskIds || []
+        }));
+        this.panel.webview.postMessage({ command: 'updateTaskStructure', tasks: taskStructure });
+      }
+      
+      // Load DAG runs
+      const runs = await client.listDagRuns(this.dagId, Constants.DEFAULT_DAG_RUN_LIMIT);
       this.panel.webview.postMessage({ command: 'updateDagRuns', runs });
-      // If no task structure from details API, load from first run
+      
+      // Priority 2: If no task structure from details API, try to load from first run
       if ((!this.dagDetails || !this.dagDetails.tasks || this.dagDetails.tasks.length === 0) && runs.length > 0) {
-        Logger.debug('DagDetailsPanel.autoLoadTasksFromRuns: Loading tasks from first run');
+        Logger.debug('DagDetailsPanel.loadTaskStructure: Loading tasks from first run');
         const firstRun = runs[0];
         const tasks = await client.listTaskInstances(this.dagId, firstRun.dagRunId);
-        // Send task structure to webview
         const taskStructure = tasks.map(t => ({
           task_id: t.taskId,
           task_type: 'Task',
@@ -183,13 +201,18 @@ export class DagDetailsPanel {
         }));
         this.panel.webview.postMessage({ command: 'updateTaskStructure', tasks: taskStructure });
       }
+      
+      // If still no task structure, log it
+      if ((!this.dagDetails || !this.dagDetails.tasks || this.dagDetails.tasks.length === 0) && runs.length === 0) {
+        Logger.debug('DagDetailsPanel.loadTaskStructure: No task structure available - no details API data and no runs');
+      }
     } catch (error: any) {
-      Logger.error('DagDetailsPanel.autoLoadTasksFromRuns: Failed', error);
+      Logger.error('DagDetailsPanel.loadTaskStructure: Failed', error);
       this.panel.webview.postMessage({ command: 'updateDagRuns', runs: [], error: error.message });
     }
   }
 
-  private async loadDagRuns(limit: number = 25) {
+  private async loadDagRuns(limit: number = Constants.DEFAULT_DAG_RUN_LIMIT) {
     try {
       Logger.debug('DagDetailsPanel.loadDagRuns: Starting', { dagId: this.dagId, limit });
       const client = await this.serverManager.getClient(this.serverId);
@@ -273,7 +296,8 @@ export class DagDetailsPanel {
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{padding:12px;font-family:var(--vscode-font-family);color:var(--vscode-foreground);background:var(--vscode-editor-background);font-size:12px}
-h1{font-size:16px;margin-bottom:10px;font-weight:600}
+h1{font-size:16px;margin-bottom:10px;font-weight:600;display:flex;align-items:center}
+h1 svg{margin-right:6px;flex-shrink:0}
 .actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 button{padding:4px 10px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;cursor:pointer;border-radius:3px;font-size:11px;line-height:1.4}
 button:hover{background:var(--vscode-button-hoverBackground)}
@@ -316,7 +340,7 @@ label{display:block;margin:6px 0 3px;font-weight:600;font-size:11px}
 #triggerForm{display:none;margin:8px 0;padding:10px;background:var(--vscode-editor-background);border-radius:3px;border:1px solid var(--vscode-panel-border)}
 </style></head><body>
 <div id="mainView">
-  <h1>📊 ${esc(dag.dagId)}</h1>
+  <h1><svg width="20" height="20" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><path d="M0 0 C23.55361068 -0.63064041 51.57202413 -1.01442223 70 16 C76.47055993 22.19681071 82.76065103 28.57140339 89 35 C92.5683494 33.5170884 94.50827861 31.54942768 97.0078125 28.6328125 C101.93031186 23.02870528 107.07871355 17.70132995 112.34082031 12.41894531 C113.90108304 10.84875094 115.45037985 9.26819023 117 7.6875 C117.996742 6.68424582 118.99411367 5.68161674 119.9921875 4.6796875 C121.32805908 3.32979736 121.32805908 3.32979736 122.69091797 1.95263672 C125 0 125 0 128 0 C128.63064041 23.55361068 129.01442223 51.57202413 112 70 C105.80318929 76.47055993 99.42859661 82.76065103 93 89 C94.73070423 92.72322423 96.69616566 94.72241042 99.8125 97.4375 C105.64272254 102.64077653 111.2502231 108.06580406 116.79989624 113.56570435 C117.76648837 114.52175931 118.73591746 115.47495455 119.7081604 116.42526245 C121.08886254 117.77600499 122.45871862 119.13780692 123.828125 120.5 C124.6315332 121.2940625 125.43494141 122.088125 126.26269531 122.90625 C128 125 128 125 128 128 C102.80604924 128.63604614 75.97573914 128.50605871 56.32666016 110.55810547 C53.63610592 107.92935795 50.99665856 105.25989536 48.375 102.5625 C47.46621094 101.64017578 46.55742188 100.71785156 45.62109375 99.76757812 C43.40696805 97.51849254 41.20022249 95.26267422 39 93 C35.27677577 94.73070423 33.27758958 96.69616566 30.5625 99.8125 C25.35922347 105.64272254 19.93419594 111.2502231 14.43429565 116.79989624 C13.47824069 117.76648837 12.52504545 118.73591746 11.57473755 119.7081604 C10.22399501 121.08886254 8.86219308 122.45871862 7.5 123.828125 C6.7059375 124.6315332 5.911875 125.43494141 5.09375 126.26269531 C3 128 3 128 0 128 C-0.59575115 104.4021441 -1.07327965 76.49172315 16 58 C22.19681071 51.52944007 28.57140339 45.23934897 35 39 C33.5170884 35.4316506 31.54942768 33.49172139 28.6328125 30.9921875 C23.02870528 26.06968814 17.70132995 20.92128645 12.41894531 15.65917969 C10.84875094 14.09891696 9.26819023 12.54962015 7.6875 11 C6.68424582 10.003258 5.68161674 9.00588633 4.6796875 8.0078125 C3.77976074 7.11723145 2.87983398 6.22665039 1.95263672 5.30908203 C0 3 0 3 0 0 Z" fill="#00AD46"/><path d="M128 0 C128.76236888 28.47350018 127.29010126 53.79475417 107.08984375 75.4140625 C105.38029635 77.15881797 103.66278983 78.89580974 101.9375 80.625 C101.07833984 81.52089844 100.21917969 82.41679688 99.33398438 83.33984375 C92.27328383 90.44908999 92.27328383 90.44908999 88.12109375 91.22265625 C82.97521331 90.85555339 80.55063902 88.59632739 77 85 C66.36189876 72.19677239 66.36189876 72.19677239 65.625 65.6875 C67.60349297 60.38154158 71.12872585 59.20794685 75.984375 56.61328125 C82.25956257 53.25621847 87.25816651 48.70899965 90 42 C89.92652344 41.0615625 89.85304688 40.123125 89.77734375 39.15625 C90.0968677 34.62685783 92.61480205 32.4949803 95.6875 29.4375 C96.29311768 28.81415771 96.89873535 28.19081543 97.52270508 27.54858398 C98.88948223 26.14873012 100.26394883 24.75635773 101.64453125 23.37011719 C103.80308379 21.19814082 105.94282612 19.00898817 108.07707214 16.81315613 C109.96899042 14.86982802 111.86920418 12.93477435 113.7718811 11.00198364 C115.17683653 9.57334323 116.57708632 8.14008019 117.97729492 6.70678711 C118.84459229 5.83546143 119.71188965 4.96413574 120.60546875 4.06640625 C121.38043701 3.28209229 122.15540527 2.49777832 122.95385742 1.68969727 C125 0 125 0 128 0 Z" fill="#00C6D4"/><path d="M0 0 C28.43478862 -0.76133239 53.87761487 0.66912258 75.4140625 20.9453125 C77.1588322 22.66400194 78.89582355 24.39062302 80.625 26.125 C81.52089844 26.99253906 82.41679688 27.86007813 83.33984375 28.75390625 C84.18933594 29.60082031 85.03882812 30.44773437 85.9140625 31.3203125 C86.6767041 32.07586426 87.4393457 32.83141602 88.22509766 33.60986328 C90.34229675 36.46094706 90.75916588 38.4845452 91 42 C87.88404612 50.7952787 78.57772222 57.05698074 70.66796875 61.23046875 C68.75 62.0625 68.75 62.0625 66 63 C61.30383123 59.96130256 59.18946159 56.18089681 56.4609375 51.46484375 C52.94666519 45.53568379 48.49890681 40.65597276 42 38 C41.0615625 38.07347656 40.123125 38.14695313 39.15625 38.22265625 C34.62685783 37.9031323 32.4949803 35.38519795 29.4375 32.3125 C28.81415771 31.70688232 28.19081543 31.10126465 27.54858398 30.47729492 C26.14873012 29.11051777 24.75635773 27.73605117 23.37011719 26.35546875 C21.19814082 24.19691621 19.00898817 22.05717388 16.81315613 19.92292786 C14.86982802 18.03100958 12.93477435 16.13079582 11.00198364 14.2281189 C9.57334323 12.82316347 8.14008019 11.42291368 6.70678711 10.02270508 C5.83546143 9.15540771 4.96413574 8.28811035 4.06640625 7.39453125 C3.28209229 6.61956299 2.49777832 5.84459473 1.68969727 5.04614258 C0 3 0 3 0 0 Z" fill="#E43921"/></svg>${esc(dag.dagId)}</h1>
   <div class="actions">
     <button id="btnTrigger" title="Trigger DAG with optional configuration">▶ Trigger</button>
     <button id="btnPause" class="secondary" title="${dag.paused?'Resume DAG execution':'Pause DAG execution'}">${dag.paused?'▶ Unpause':'⏸ Pause'}</button>

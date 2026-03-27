@@ -5,6 +5,7 @@ import { AirflowStableClient } from '../api/AirflowStableClient';
 import { AirflowV2Client } from '../api/AirflowV2Client';
 import { MwaaClient } from '../api/MwaaClient';
 import { Logger } from '../utils/logger';
+import { Constants } from '../utils/constants';
 
 export class ServerManager {
   private context: vscode.ExtensionContext;
@@ -45,15 +46,15 @@ export class ServerManager {
       Logger.info('ServerManager.addServer: API version detected', { apiMode: profile.apiMode });
     }
     
-    // Test health and update status
+    // Test health and update status - MUST succeed
     try {
       const client = await this.createClient(profile, password);
       await client.getHealth();
       profile.lastHealthStatus = 'healthy';
       Logger.info('ServerManager.addServer: Health check passed', { name: profile.name });
     } catch (error: any) {
-      profile.lastHealthStatus = 'down';
-      Logger.warn('ServerManager.addServer: Health check failed', { name: profile.name, error: error.message });
+      Logger.error('ServerManager.addServer: Health check failed', error, { name: profile.name });
+      throw new Error(`Health check failed: ${error.message}`);
     }
     
     servers.push(profile);
@@ -150,9 +151,9 @@ export class ServerManager {
       return undefined;
     }
 
-    // Check cache (cache for 5 minutes)
+    // Check cache (cache for configured TTL)
     const cached = this.clientCache.get(server.id);
-    if (cached && (Date.now() - cached.timestamp) < 5 * 60 * 1000) {
+    if (cached && (Date.now() - cached.timestamp) < Constants.CLIENT_CACHE_TTL) {
       Logger.debug('ServerManager.getClient: Using cached client', { serverId: server.id });
       return cached.client;
     }

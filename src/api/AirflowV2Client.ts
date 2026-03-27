@@ -2,6 +2,8 @@ import { IAirflowClient, ClearTaskOptions } from './IAirflowClient';
 import { HttpClient } from './HttpClient';
 import { DagSummary, DagRun, TaskInstance, Variable, Pool, Connection, HealthStatus } from '../models';
 import { Logger } from '../utils/logger';
+import { Constants } from '../utils/constants';
+import { parseLogResponse } from '../utils/logParser';
 
 export class AirflowV2Client implements IAirflowClient {
   private http: HttpClient;
@@ -21,7 +23,7 @@ export class AirflowV2Client implements IAirflowClient {
 
   async listDags(): Promise<DagSummary[]> {
     try {
-      const response = await this.http.get<any>('/api/v2/dags?limit=100');
+      const response = await this.http.get<any>(`/api/v2/dags?limit=${Constants.DEFAULT_API_LIMIT}`);
       Logger.debug('AirflowV2Client.listDags: Success', { count: response.dags?.length });
       return response.dags.map((dag: any) => ({
         dagId: dag.dag_id,
@@ -76,16 +78,17 @@ export class AirflowV2Client implements IAirflowClient {
 
   async getDagDetails(dagId: string): Promise<any> {
     try {
-      const response = await this.http.get<any>(`/api/v2/dags/${dagId}/details`);
-      Logger.debug('AirflowV2Client.getDagDetails: Success', { dagId });
-      return response;
+      // Get DAG tasks structure - this works even when there are no runs
+      const response = await this.http.get<any>(`/api/v2/dags/${dagId}/tasks`);
+      Logger.debug('AirflowV2Client.getDagDetails: Success', { dagId, taskCount: response.tasks?.length });
+      return { tasks: response.tasks || [] };
     } catch (error: any) {
       Logger.error('AirflowV2Client.getDagDetails: Failed', error, { dagId });
       throw error;
     }
   }
 
-  async listDagRuns(dagId: string, limit: number = 25): Promise<DagRun[]> {
+  async listDagRuns(dagId: string, limit: number = Constants.DEFAULT_DAG_RUN_LIMIT): Promise<DagRun[]> {
     try {
       const response = await this.http.get<any>(`/api/v2/dags/${dagId}/dagRuns?limit=${limit}`);
       Logger.debug('AirflowV2Client.listDagRuns: Success', { dagId, count: response.dag_runs?.length });
@@ -197,7 +200,7 @@ export class AirflowV2Client implements IAirflowClient {
 
   async listVariables(): Promise<Variable[]> {
     try {
-      const response = await this.http.get<any>('/api/v2/variables?limit=100');
+      const response = await this.http.get<any>(`/api/v2/variables?limit=${Constants.DEFAULT_API_LIMIT}`);
       Logger.debug('AirflowV2Client.listVariables: Success', { count: response.variables?.length });
       return response.variables.map((v: any) => ({
         key: v.key,
@@ -255,7 +258,7 @@ export class AirflowV2Client implements IAirflowClient {
 
   async listPools(): Promise<Pool[]> {
     try {
-      const response = await this.http.get<any>('/api/v2/pools?limit=100');
+      const response = await this.http.get<any>(`/api/v2/pools?limit=${Constants.DEFAULT_API_LIMIT}`);
       Logger.debug('AirflowV2Client.listPools: Success', { count: response.pools?.length });
       return response.pools.map((p: any) => ({
         name: p.name,
@@ -323,7 +326,7 @@ export class AirflowV2Client implements IAirflowClient {
 
   async listConnections(): Promise<Connection[]> {
     try {
-      const response = await this.http.get<any>('/api/v2/connections?limit=100');
+      const response = await this.http.get<any>(`/api/v2/connections?limit=${Constants.DEFAULT_API_LIMIT}`);
       Logger.debug('AirflowV2Client.listConnections: Success', { count: response.connections?.length });
       return response.connections.map((c: any) => ({
         connectionId: c.connection_id,
@@ -517,27 +520,4 @@ export class AirflowV2Client implements IAirflowClient {
       throw error;
     }
   }
-}
-
-function parseLogResponse(response: any): string {
-  if (!response) return '';
-  if (typeof response === 'string') return response;
-  if (response.content) {
-    if (typeof response.content === 'string') return response.content;
-    if (Array.isArray(response.content)) {
-      return response.content.map((e: any) => {
-        if (typeof e === 'string') return e;
-        if (Array.isArray(e)) return e.join(' ');
-        return e.message || e.content || JSON.stringify(e);
-      }).join('\n');
-    }
-  }
-  if (Array.isArray(response)) {
-    return response.map((e: any) => {
-      if (typeof e === 'string') return e;
-      if (Array.isArray(e)) return e.join(' ');
-      return e.message || e.content || JSON.stringify(e);
-    }).join('\n');
-  }
-  return JSON.stringify(response, null, 2);
 }

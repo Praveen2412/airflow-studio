@@ -3,10 +3,11 @@
   "displayName": "Airflow Studio",
   "description": "Comprehensive Apache Airflow and AWS MWAA management studio for VS Code",
   "version": "0.1.0",
-  "publisher": "airflow",
+  "publisher": "PraveenVeerapathiran",
+  "icon": "resources/airflow.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/airflow-vscode-extension"
+    "url": "https://github.com/Praveen2412/airflow-studio"
   },
   "engines": {
     "vscode": "^1.80.0"
@@ -26,6 +27,51 @@
           "type": "boolean",
           "default": false,
           "description": "Enable verbose logging for debugging (includes all HTTP requests/responses and debug messages)"
+        },
+        "airflowStudio.healthCheckInterval": {
+          "type": "number",
+          "default": 30000,
+          "description": "Health check interval in milliseconds (default: 30000 = 30 seconds)"
+        },
+        "airflowStudio.clientCacheTTL": {
+          "type": "number",
+          "default": 300000,
+          "description": "API client cache TTL in milliseconds (default: 300000 = 5 minutes)"
+        },
+        "airflowStudio.tokenCacheTTL": {
+          "type": "number",
+          "default": 3000000,
+          "description": "JWT token cache TTL in milliseconds (default: 3000000 = 50 minutes)"
+        },
+        "airflowStudio.webviewUpdateDelay": {
+          "type": "number",
+          "default": 500,
+          "description": "Webview update delay in milliseconds (default: 500ms)"
+        },
+        "airflowStudio.dagCacheTTL": {
+          "type": "number",
+          "default": 30000,
+          "description": "DAG list cache TTL in milliseconds (default: 30000 = 30 seconds)"
+        },
+        "airflowStudio.taskRefreshDelay": {
+          "type": "number",
+          "default": 1000,
+          "description": "Task refresh delay after operations in milliseconds (default: 1000 = 1 second)"
+        },
+        "airflowStudio.httpTimeout": {
+          "type": "number",
+          "default": 30000,
+          "description": "HTTP request timeout in milliseconds (default: 30000 = 30 seconds)"
+        },
+        "airflowStudio.defaultDagRunLimit": {
+          "type": "number",
+          "default": 25,
+          "description": "Default number of DAG runs to load (default: 25)"
+        },
+        "airflowStudio.defaultApiLimit": {
+          "type": "number",
+          "default": 100,
+          "description": "Default limit for API list operations (default: 100)"
         }
       }
     },

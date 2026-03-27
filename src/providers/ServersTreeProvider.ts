@@ -2,8 +2,14 @@ import * as vscode from 'vscode';
 import { ServerProfile, DagSummary } from '../models';
 import { ServerManager } from '../managers/ServerManager';
 import { Logger } from '../utils/logger';
+import { Constants } from '../utils/constants';
 
-type TreeItemType = ServerTreeItem | DagsFolderItem | AdminFolderItem | DagTreeItem | AdminItemTreeItem;
+type TreeItemType = ServerTreeItem | DagsFolderItem | AdminFolderItem | DagTreeItem | AdminItemTreeItem | NoServersItem;
+
+interface DagCache {
+  dags: DagSummary[];
+  timestamp: number;
+}
 
 export class ServersTreeProvider implements vscode.TreeDataProvider<TreeItemType> {
   private _onDidChangeTreeData = new vscode.EventEmitter<TreeItemType | undefined>();
@@ -12,6 +18,7 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeItemType
   private hiddenDagsFolders = new Set<string>();
   private showOnlyFavoriteServers = false;
   private showOnlyFavoriteDagsPerServer = new Map<string, boolean>();
+  private dagCache = new Map<string, DagCache>();
 
   constructor(private serverManager: ServerManager) {
     Logger.debug('ServersTreeProvider: Initialized');
@@ -19,6 +26,8 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeItemType
 
   refresh(): void {
     Logger.debug('ServersTreeProvider: Refreshing');
+    // Clear cache on manual refresh
+    this.dagCache.clear();
     this._onDidChangeTreeData.fire(undefined);
   }
 
@@ -30,6 +39,10 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeItemType
     if (!element) {
       Logger.debug('ServersTreeProvider.getChildren: Loading servers');
       let servers = await this.serverManager.getServers();
+      
+      if (servers.length === 0) {
+        return [new NoServersItem()];
+      }
       
       if (this.showOnlyFavoriteServers) {
         servers = servers.filter(s => s.isFavorite);
@@ -55,17 +68,46 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeItemType
       if (isHidden) return [];
       
       try {
-        const client = await this.serverManager.getClient(element.server.id);
-        if (!client) return [];
-        let dags = await client.listDags();
+        // Check cache first
+        const cached = this.dagCache.get(element.server.id);
+        const now = Date.now();
         
-        const showOnlyFavorites = this.showOnlyFavoriteDagsPerServer.get(element.server.id) || false;
-        if (showOnlyFavorites) {
-          const favoriteDags = element.server.favoriteDags || [];
-          dags = dags.filter(dag => favoriteDags.includes(dag.dagId));
+        if (cached && (now - cached.timestamp) < Constants.DAG_CACHE_TTL) {
+          Logger.debug('ServersTreeProvider: Using cached DAGs', { 
+            serverId: element.server.id, 
+            count: cached.dags.length,
+            age: now - cached.timestamp 
+          });
+          let dags = cached.dags;
+          
+          const showOnlyFavorites = this.showOnlyFavoriteDagsPerServer.get(element.server.id) || false;
+          if (showOnlyFavorites) {
+            const favoriteDags = element.server.favoriteDags || [];
+            dags = dags.filter(dag => favoriteDags.includes(dag.dagId));
+          }
+          
+          return dags.map(dag => new DagTreeItem(dag, element.server.id, element.server.favoriteDags?.includes(dag.dagId) || false));
         }
         
-        return dags.map(dag => new DagTreeItem(dag, element.server.id, element.server.favoriteDags?.includes(dag.dagId) || false));
+        // Cache miss or expired - fetch from API
+        Logger.debug('ServersTreeProvider: Fetching DAGs from API', { serverId: element.server.id });
+        const client = await this.serverManager.getClient(element.server.id);
+        if (!client) return [];
+        
+        const dags = await client.listDags();
+        
+        // Update cache
+        this.dagCache.set(element.server.id, { dags, timestamp: now });
+        Logger.debug('ServersTreeProvider: Cached DAGs', { serverId: element.server.id, count: dags.length });
+        
+        const showOnlyFavorites = this.showOnlyFavoriteDagsPerServer.get(element.server.id) || false;
+        let filteredDags = dags;
+        if (showOnlyFavorites) {
+          const favoriteDags = element.server.favoriteDags || [];
+          filteredDags = dags.filter(dag => favoriteDags.includes(dag.dagId));
+        }
+        
+        return filteredDags.map(dag => new DagTreeItem(dag, element.server.id, element.server.favoriteDags?.includes(dag.dagId) || false));
       } catch (error: any) {
         Logger.error('Failed to load DAGs', error, { serverId: element.server.id });
         return [];
@@ -168,8 +210,8 @@ class DagTreeItem extends vscode.TreeItem {
     this.contextValue = 'dag';
     
     const favoriteIcon = isFavorite ? '❤️ ' : '';
-    this.description = `${favoriteIcon}${dag.paused ? '⏸ Paused' : '▶ Active'}`;
-    this.tooltip = `${dag.dagId}\nOwner: ${dag.owner || 'N/A'}\nSchedule: ${dag.schedule || 'None'}\nTags: ${dag.tags?.join(', ') || 'None'}${isFavorite ? '\n❤️ Favorite' : ''}`;
+    this.description = favoriteIcon;
+    this.tooltip = `${dag.dagId}\nStatus: ${dag.paused ? 'Paused' : 'Active'}\nOwner: ${dag.owner || 'N/A'}\nSchedule: ${dag.schedule || 'None'}\nTags: ${dag.tags?.join(', ') || 'None'}${isFavorite ? '\n❤️ Favorite' : ''}`;
     this.iconPath = new vscode.ThemeIcon(dag.paused ? 'debug-pause' : 'play');
     this.command = {
       command: 'airflow.openDagDetails',
@@ -210,6 +252,20 @@ class AdminItemTreeItem extends vscode.TreeItem {
       command: commandMap[itemType],
       title: `Open ${label}`,
       arguments: [{ serverId: this.serverId }]
+    };
+  }
+}
+
+class NoServersItem extends vscode.TreeItem {
+  constructor() {
+    super('No servers configured', vscode.TreeItemCollapsibleState.None);
+    this.contextValue = 'noServers';
+    this.iconPath = new vscode.ThemeIcon('info');
+    this.description = 'Click to add a server';
+    this.tooltip = 'Add your first Airflow server to get started';
+    this.command = {
+      command: 'airflow.addServer',
+      title: 'Add Server'
     };
   }
 }

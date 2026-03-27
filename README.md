@@ -59,7 +59,7 @@ Airflow Studio is a comprehensive VS Code extension that brings the power of Apa
 
 ### Installation
 
-1. **From VS Code Marketplace** (coming soon)
+1. **From VS Code Marketplace** 
    - Search for "Airflow Studio" in Extensions
    - Click Install
 
@@ -350,6 +350,8 @@ Access via `File` → `Preferences` → `Settings` → Search "Airflow Studio"
 ---
 
 ## 📋 Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
 
 ### v0.1.0 (Current Release)
 

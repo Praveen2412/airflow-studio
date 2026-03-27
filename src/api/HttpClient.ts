@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import { Logger } from '../utils/logger';
+import { Constants } from '../utils/constants';
 
 export class HttpClient {
   private client: AxiosInstance;
@@ -18,7 +19,7 @@ export class HttpClient {
         'Content-Type': 'application/json',
         ...headers
       },
-      timeout: 30000
+      timeout: Constants.HTTP_TIMEOUT
     });
 
     // Request interceptor
@@ -74,7 +75,7 @@ setAuth(username: string, password: string) {
     this.username = username;
     this.password = password;
     
-    // Return existing token if still valid (cache for 50 minutes, tokens typically valid for 60)
+    // Return existing token if still valid (cache for configured TTL)
     if (this.token && this.tokenExpiry && Date.now() < this.tokenExpiry) {
       Logger.debug('HttpClient: Using cached JWT token');
       return true;
@@ -109,9 +110,9 @@ setAuth(username: string, password: string) {
       );
       
       this.token = response.data.access_token;
-      this.tokenExpiry = Date.now() + (50 * 60 * 1000); // Cache for 50 minutes
+      this.tokenExpiry = Date.now() + Constants.TOKEN_CACHE_TTL;
       this.client.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
-      Logger.info('HttpClient: JWT token obtained and cached');
+      Logger.info('HttpClient: JWT token obtained and cached', { ttl: Constants.TOKEN_CACHE_TTL });
       return true;
     } catch (error: any) {
       Logger.error('HttpClient: Failed to get JWT token', error);
