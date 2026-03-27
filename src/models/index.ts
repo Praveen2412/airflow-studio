@@ -4,7 +4,7 @@ export interface ServerProfile {
   type: 'self-hosted' | 'mwaa';
   baseUrl: string;
   awsRegion?: string;
-  authType: 'basic' | 'token' | 'aws';
+  authBackend?: 'basic' | 'session' | 'jwt' | 'aws' | 'auto';  // Detected auth backend
   username?: string;
   apiMode: 'stable-v1' | 'stable-v2' | 'auto';
   defaultRefreshInterval: number;

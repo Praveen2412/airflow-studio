@@ -99,12 +99,17 @@ export class DagDetailsPanel {
             'Confirm'
           );
           if (confirmTask === 'Confirm') {
-            Logger.info('DagDetailsPanel: Setting task state', { dagId: this.dagId, dagRunId: msg.dagRunId, taskId: msg.taskId, state: msg.state });
-            await client.setTaskInstanceState(this.dagId, msg.dagRunId, msg.taskId, msg.state);
-            vscode.window.showInformationMessage(`Task ${msg.taskId} set to ${msg.state}`);
-            Logger.info('DagDetailsPanel: Task state set successfully', { dagId: this.dagId, taskId: msg.taskId, state: msg.state });
-            // Refresh tasks after a short delay
-            setTimeout(() => this.loadTasks(msg.dagRunId), Constants.TASK_REFRESH_DELAY);
+            try {
+              Logger.info('DagDetailsPanel: Setting task state', { dagId: this.dagId, dagRunId: msg.dagRunId, taskId: msg.taskId, state: msg.state });
+              await client.setTaskInstanceState(this.dagId, msg.dagRunId, msg.taskId, msg.state);
+              Logger.info('DagDetailsPanel: Task state set successfully', { dagId: this.dagId, taskId: msg.taskId, state: msg.state });
+              vscode.window.showInformationMessage(`✓ Task ${msg.taskId} set to ${msg.state}`);
+              // Refresh tasks immediately to show the change
+              await this.loadTasks(msg.dagRunId);
+            } catch (error: any) {
+              Logger.error('DagDetailsPanel: Failed to set task state', error, { dagId: this.dagId, taskId: msg.taskId });
+              vscode.window.showErrorMessage(`Failed to set task state: ${error.message}`);
+            }
           }
           break;
         case 'setDagRunState':

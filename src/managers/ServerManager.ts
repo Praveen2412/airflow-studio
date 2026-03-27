@@ -1,9 +1,7 @@
 import * as vscode from 'vscode';
 import { ServerProfile } from '../models';
 import { IAirflowClient } from '../api/IAirflowClient';
-import { AirflowStableClient } from '../api/AirflowStableClient';
-import { AirflowV2Client } from '../api/AirflowV2Client';
-import { MwaaClient } from '../api/MwaaClient';
+import { AirflowClientFactory, AuthBackend, ApiVersion } from '../api/AirflowClientFactory';
 import { Logger } from '../utils/logger';
 import { Constants } from '../utils/constants';
 
@@ -40,21 +38,43 @@ export class ServerManager {
   async addServer(profile: ServerProfile, password?: string): Promise<void> {
     const servers = await this.getServers();
     
-    // Auto-detect API version
-    if (profile.apiMode === 'auto') {
-      profile.apiMode = await this.detectApiVersion(profile, password);
-      Logger.info('ServerManager.addServer: API version detected', { apiMode: profile.apiMode });
-    }
-    
-    // Test health and update status - MUST succeed
-    try {
-      const client = await this.createClient(profile, password);
-      await client.getHealth();
-      profile.lastHealthStatus = 'healthy';
-      Logger.info('ServerManager.addServer: Health check passed', { name: profile.name });
-    } catch (error: any) {
-      Logger.error('ServerManager.addServer: Health check failed', error, { name: profile.name });
-      throw new Error(`Health check failed: ${error.message}`);
+    // Auto-detect API version and auth backend
+    if (profile.apiMode === 'auto' || !profile.authBackend || profile.authBackend === 'auto') {
+      try {
+        Logger.info('ServerManager.addServer: Auto-detecting API and auth', { name: profile.name });
+        const result = await AirflowClientFactory.createClient(
+          profile.baseUrl,
+          profile.username,
+          password,
+          profile.headers,
+          profile.type,
+          profile.awsRegion,
+          profile.type === 'mwaa' ? profile.baseUrl : undefined
+        );
+        
+        profile.apiMode = result.apiVersion === 'v2' ? 'stable-v2' : 'stable-v1';
+        profile.authBackend = result.authBackend;
+        profile.lastHealthStatus = 'healthy';
+        
+        Logger.info('ServerManager.addServer: Detection successful', { 
+          apiMode: profile.apiMode, 
+          authBackend: profile.authBackend 
+        });
+      } catch (error: any) {
+        Logger.error('ServerManager.addServer: Detection failed', error, { name: profile.name });
+        throw new Error(`Failed to connect: ${error.message}`);
+      }
+    } else {
+      // Use specified API mode and auth backend
+      try {
+        const client = await this.createClient(profile, password);
+        await client.listDags(); // Test with authenticated endpoint
+        profile.lastHealthStatus = 'healthy';
+        Logger.info('ServerManager.addServer: Connection test passed', { name: profile.name });
+      } catch (error: any) {
+        Logger.error('ServerManager.addServer: Connection test failed', error, { name: profile.name });
+        throw new Error(`Connection test failed: ${error.message}`);
+      }
     }
     
     servers.push(profile);
@@ -66,48 +86,57 @@ export class ServerManager {
   }
 
   private async detectApiVersion(profile: ServerProfile, password?: string): Promise<'stable-v1' | 'stable-v2'> {
+    // This method is deprecated - use AirflowClientFactory instead
     try {
-      Logger.debug('ServerManager.detectApiVersion: Testing v2');
-      
-      if (profile.type === 'mwaa') {
-        const v2Client = new MwaaClient(profile.baseUrl, profile.awsRegion || 'us-east-1', 'v2');
-        await v2Client.getHealth();
-        return 'stable-v2';
-      } else {
-        const v2Client = await AirflowV2Client.create(profile.baseUrl, profile.username, password, profile.headers);
-        await v2Client.getHealth();
-        return 'stable-v2';
-      }
+      const result = await AirflowClientFactory.createClient(
+        profile.baseUrl,
+        profile.username,
+        password,
+        profile.headers,
+        profile.type,
+        profile.awsRegion,
+        profile.type === 'mwaa' ? profile.baseUrl : undefined
+      );
+      return result.apiVersion === 'v2' ? 'stable-v2' : 'stable-v1';
     } catch (error) {
-      Logger.debug('ServerManager.detectApiVersion: v2 failed, trying v1');
-      try {
-        if (profile.type === 'mwaa') {
-          const v1Client = new MwaaClient(profile.baseUrl, profile.awsRegion || 'us-east-1', 'v1');
-          await v1Client.getHealth();
-          return 'stable-v1';
-        } else {
-          const v1Client = new AirflowStableClient(profile.baseUrl, profile.username, password, profile.headers);
-          await v1Client.getHealth();
-          return 'stable-v1';
-        }
-      } catch (error2) {
-        Logger.warn('ServerManager.detectApiVersion: Both versions failed, defaulting to v1');
-        return 'stable-v1';
-      }
+      Logger.warn('ServerManager.detectApiVersion: Detection failed, defaulting to v1');
+      return 'stable-v1';
     }
   }
 
   private async createClient(profile: ServerProfile, password?: string): Promise<IAirflowClient> {
-    if (profile.type === 'mwaa') {
-      const apiVersion = profile.apiMode === 'stable-v2' ? 'v2' : 'v1';
-      return new MwaaClient(profile.baseUrl, profile.awsRegion || 'us-east-1', apiVersion);
-    } else {
-      if (profile.apiMode === 'stable-v2') {
-        return await AirflowV2Client.create(profile.baseUrl, profile.username, password, profile.headers);
-      } else {
-        return new AirflowStableClient(profile.baseUrl, profile.username, password, profile.headers);
-      }
+    // If auth backend is known, use it directly (faster)
+    if (profile.authBackend && profile.authBackend !== 'auto') {
+      const apiVersion: ApiVersion = profile.apiMode === 'stable-v2' ? 'v2' : 'v1';
+      return await AirflowClientFactory.createClientFromProfile(
+        profile.baseUrl,
+        apiVersion,
+        profile.authBackend,
+        profile.username,
+        password,
+        profile.headers,
+        profile.type === 'mwaa' ? profile.baseUrl : undefined,
+        profile.awsRegion
+      );
     }
+
+    // Otherwise, detect (should only happen on first connection)
+    const result = await AirflowClientFactory.createClient(
+      profile.baseUrl,
+      profile.username,
+      password,
+      profile.headers,
+      profile.type,
+      profile.awsRegion,
+      profile.type === 'mwaa' ? profile.baseUrl : undefined
+    );
+
+    // Update profile with detected values
+    profile.apiMode = result.apiVersion === 'v2' ? 'stable-v2' : 'stable-v1';
+    profile.authBackend = result.authBackend;
+    await this.updateServer(profile, password);
+
+    return result.client;
   }
 
   async updateServer(profile: ServerProfile, password?: string): Promise<void> {
@@ -158,9 +187,22 @@ export class ServerManager {
       return cached.client;
     }
 
-    Logger.debug('ServerManager.getClient: Creating new client', { type: server.type, name: server.name, apiMode: server.apiMode });
+    Logger.debug('ServerManager.getClient: Creating new client', { 
+      type: server.type, 
+      name: server.name, 
+      apiMode: server.apiMode, 
+      hasUsername: !!server.username,
+      username: server.username || 'none'
+    });
     
     const password = server.username ? await this.context.secrets.get(`airflow.password.${server.id}`) : undefined;
+    Logger.debug('ServerManager.getClient: Retrieved credentials from secret storage', { 
+      hasUsername: !!server.username, 
+      hasPassword: !!password,
+      passwordLength: password?.length || 0,
+      secretKey: `airflow.password.${server.id}`
+    });
+    
     const client = await this.createClient(server, password);
     
     // Cache the client
@@ -177,12 +219,16 @@ export class ServerManager {
         return { success: false, message: 'Server not found' };
       }
       
-      await client.getHealth();
+      // Test with authenticated endpoint (listDags requires auth)
+      await client.listDags();
       Logger.info('ServerManager.testConnection: Success', { serverId });
-      return { success: true, message: 'Connection successful' };
+      return { success: true, message: 'Connection and authentication successful' };
     } catch (error: any) {
       Logger.error('ServerManager.testConnection: Failed', error, { serverId });
-      return { success: false, message: error.message || 'Connection failed' };
+      const message = error.status === 401 
+        ? 'Authentication failed: Invalid credentials or unsupported auth backend'
+        : error.message || 'Connection failed';
+      return { success: false, message };
     }
   }
 }

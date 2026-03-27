@@ -1,45 +1,41 @@
 import { IAirflowClient, ClearTaskOptions } from './IAirflowClient';
-import { HttpClient } from './HttpClient';
+import { SessionHttpClient } from './SessionHttpClient';
 import { DagSummary, DagRun, TaskInstance, Variable, Pool, Connection, HealthStatus } from '../models';
 import { Logger } from '../utils/logger';
 import { Constants } from '../utils/constants';
 import { parseLogResponse } from '../utils/logParser';
 
-export class AirflowStableClient implements IAirflowClient {
-  private http: HttpClient;
+export class AirflowSessionClient implements IAirflowClient {
+  private http: SessionHttpClient;
 
-  constructor(baseUrl: string, username?: string, password?: string, headers?: Record<string, string>) {
-    this.http = new HttpClient(baseUrl, headers);
-    if (username && password) {
-      this.http.setAuth(username, password);
-      Logger.info('AirflowStableClient: Initialized (API v1) with Basic Auth', { 
-        username, 
-        hasPassword: !!password,
-        passwordLength: password?.length || 0
-      });
-    } else {
-      Logger.info('AirflowStableClient: Initialized (API v1) without auth', { 
-        hasUsername: !!username, 
-        hasPassword: !!password,
-        username: username || 'none'
-      });
+  private constructor(baseUrl: string, headers?: Record<string, string>) {
+    this.http = new SessionHttpClient(baseUrl, headers);
+  }
+
+  static async create(baseUrl: string, username: string, password: string, headers?: Record<string, string>): Promise<AirflowSessionClient> {
+    const client = new AirflowSessionClient(baseUrl, headers);
+    const success = await client.http.setSessionAuth(username, password);
+    if (!success) {
+      throw new Error('Failed to establish session authentication');
     }
+    Logger.info('AirflowSessionClient: Initialized (API v1) with Session Auth', { username });
+    return client;
   }
 
   async listDags(): Promise<DagSummary[]> {
     try {
       const response = await this.http.get<any>(`/api/v1/dags?limit=${Constants.DEFAULT_API_LIMIT}`);
-      Logger.debug('AirflowStableClient.listDags: Success', { count: response.dags?.length });
+      Logger.debug('AirflowSessionClient.listDags: Success', { count: response.dags?.length });
       return response.dags.map((dag: any) => ({
-      dagId: dag.dag_id,
-      paused: dag.is_paused,
-      schedule: this.formatSchedule(dag.schedule_interval, dag.timetable_description),
-      owner: dag.owners?.[0] || 'unknown',
-      tags: dag.tags?.map((t: any) => t.name) || [],
-      lastRunState: dag.last_parsed_time ? 'unknown' : undefined
-    }));
+        dagId: dag.dag_id,
+        paused: dag.is_paused,
+        schedule: this.formatSchedule(dag.schedule_interval, dag.timetable_description),
+        owner: dag.owners?.[0] || 'unknown',
+        tags: dag.tags?.map((t: any) => t.name) || [],
+        lastRunState: dag.last_parsed_time ? 'unknown' : undefined
+      }));
     } catch (error: any) {
-      Logger.error('AirflowStableClient.listDags: Failed', error);
+      Logger.error('AirflowSessionClient.listDags: Failed', error);
       throw error;
     }
   }
@@ -62,16 +58,16 @@ export class AirflowStableClient implements IAirflowClient {
   async getDag(dagId: string): Promise<DagSummary> {
     try {
       const dag = await this.http.get<any>(`/api/v1/dags/${dagId}`);
-      Logger.debug('AirflowStableClient.getDag: Success', { dagId });
+      Logger.debug('AirflowSessionClient.getDag: Success', { dagId });
       return {
-      dagId: dag.dag_id,
-      paused: dag.is_paused,
-      schedule: this.formatSchedule(dag.schedule_interval, dag.timetable_description),
-      owner: dag.owners?.[0] || 'unknown',
-      tags: dag.tags?.map((t: any) => t.name) || []
-    };
+        dagId: dag.dag_id,
+        paused: dag.is_paused,
+        schedule: this.formatSchedule(dag.schedule_interval, dag.timetable_description),
+        owner: dag.owners?.[0] || 'unknown',
+        tags: dag.tags?.map((t: any) => t.name) || []
+      };
     } catch (error: any) {
-      Logger.error('AirflowStableClient.getDag: Failed', error, { dagId });
+      Logger.error('AirflowSessionClient.getDag: Failed', error, { dagId });
       throw error;
     }
   }
@@ -79,9 +75,9 @@ export class AirflowStableClient implements IAirflowClient {
   async pauseDag(dagId: string, paused: boolean): Promise<void> {
     try {
       await this.http.patch(`/api/v1/dags/${dagId}`, { is_paused: paused });
-      Logger.info('AirflowStableClient.pauseDag: Success', { dagId, paused });
+      Logger.info('AirflowSessionClient.pauseDag: Success', { dagId, paused });
     } catch (error: any) {
-      Logger.error('AirflowStableClient.pauseDag: Failed', error, { dagId, paused });
+      Logger.error('AirflowSessionClient.pauseDag: Failed', error, { dagId, paused });
       throw error;
     }
   }
@@ -89,21 +85,20 @@ export class AirflowStableClient implements IAirflowClient {
   async deleteDag(dagId: string): Promise<void> {
     try {
       await this.http.delete(`/api/v1/dags/${dagId}`);
-      Logger.info('AirflowStableClient.deleteDag: Success', { dagId });
+      Logger.info('AirflowSessionClient.deleteDag: Success', { dagId });
     } catch (error: any) {
-      Logger.error('AirflowStableClient.deleteDag: Failed', error, { dagId });
+      Logger.error('AirflowSessionClient.deleteDag: Failed', error, { dagId });
       throw error;
     }
   }
 
   async getDagDetails(dagId: string): Promise<any> {
     try {
-      // Get DAG tasks structure - this works even when there are no runs
       const response = await this.http.get<any>(`/api/v1/dags/${dagId}/tasks`);
-      Logger.debug('AirflowStableClient.getDagDetails: Success', { dagId, taskCount: response.tasks?.length });
+      Logger.debug('AirflowSessionClient.getDagDetails: Success', { dagId, taskCount: response.tasks?.length });
       return { tasks: response.tasks || [] };
     } catch (error: any) {
-      Logger.error('AirflowStableClient.getDagDetails: Failed', error, { dagId });
+      Logger.error('AirflowSessionClient.getDagDetails: Failed', error, { dagId });
       throw error;
     }
   }
@@ -111,7 +106,7 @@ export class AirflowStableClient implements IAirflowClient {
   async listDagRuns(dagId: string, limit: number = Constants.DEFAULT_DAG_RUN_LIMIT): Promise<DagRun[]> {
     try {
       const response = await this.http.get<any>(`/api/v1/dags/${dagId}/dagRuns?limit=${limit}`);
-      Logger.debug('AirflowStableClient.listDagRuns: Success', { dagId, count: response.dag_runs?.length });
+      Logger.debug('AirflowSessionClient.listDagRuns: Success', { dagId, count: response.dag_runs?.length });
       return response.dag_runs.map((run: any) => ({
         dagRunId: run.dag_run_id,
         dagId: run.dag_id,
@@ -122,7 +117,7 @@ export class AirflowStableClient implements IAirflowClient {
         conf: run.conf
       }));
     } catch (error: any) {
-      Logger.error('AirflowStableClient.listDagRuns: Failed', error, { dagId });
+      Logger.error('AirflowSessionClient.listDagRuns: Failed', error, { dagId });
       throw error;
     }
   }
@@ -134,16 +129,16 @@ export class AirflowStableClient implements IAirflowClient {
       if (logicalDate) payload.logical_date = logicalDate;
       
       const run = await this.http.post<any>(`/api/v1/dags/${dagId}/dagRuns`, payload);
-      Logger.info('AirflowStableClient.triggerDagRun: Success', { dagId });
-    return {
-      dagRunId: run.dag_run_id,
-      dagId: run.dag_id,
-      state: run.state,
-      executionDate: run.execution_date,
-      conf: run.conf
-    };
+      Logger.info('AirflowSessionClient.triggerDagRun: Success', { dagId });
+      return {
+        dagRunId: run.dag_run_id,
+        dagId: run.dag_id,
+        state: run.state,
+        executionDate: run.execution_date,
+        conf: run.conf
+      };
     } catch (error: any) {
-      Logger.error('AirflowStableClient.triggerDagRun: Failed', error, { dagId });
+      Logger.error('AirflowSessionClient.triggerDagRun: Failed', error, { dagId });
       throw error;
     }
   }
@@ -151,7 +146,7 @@ export class AirflowStableClient implements IAirflowClient {
   async listTaskInstances(dagId: string, dagRunId: string): Promise<TaskInstance[]> {
     try {
       const response = await this.http.get<any>(`/api/v1/dags/${dagId}/dagRuns/${dagRunId}/taskInstances`);
-      Logger.debug('AirflowStableClient.listTaskInstances: Success', { dagId, dagRunId });
+      Logger.debug('AirflowSessionClient.listTaskInstances: Success', { dagId, dagRunId });
       return response.task_instances.map((task: any) => ({
         taskId: task.task_id,
         dagId: task.dag_id,
@@ -164,7 +159,7 @@ export class AirflowStableClient implements IAirflowClient {
         mapIndex: task.map_index
       }));
     } catch (error: any) {
-      Logger.error('AirflowStableClient.listTaskInstances: Failed', error, { dagId, dagRunId });
+      Logger.error('AirflowSessionClient.listTaskInstances: Failed', error, { dagId, dagRunId });
       throw error;
     }
   }
@@ -174,10 +169,10 @@ export class AirflowStableClient implements IAirflowClient {
       let url = `/api/v1/dags/${dagId}/dagRuns/${dagRunId}/taskInstances/${taskId}/logs/${tryNumber}`;
       if (mapIndex !== undefined) url += `?map_index=${mapIndex}`;
       const response = await this.http.get<any>(url);
-      Logger.debug('AirflowStableClient.getTaskLogs: Success', { dagId, taskId });
+      Logger.debug('AirflowSessionClient.getTaskLogs: Success', { dagId, taskId });
       return parseLogResponse(response);
     } catch (error: any) {
-      Logger.error('AirflowStableClient.getTaskLogs: Failed', error, { dagId, taskId });
+      Logger.error('AirflowSessionClient.getTaskLogs: Failed', error, { dagId, taskId });
       throw error;
     }
   }
@@ -194,9 +189,9 @@ export class AirflowStableClient implements IAirflowClient {
         include_future: options?.includeFuture ?? false,
         only_failed: options?.onlyFailed ?? false
       });
-      Logger.info('AirflowStableClient.clearTaskInstances: Success', { dagId, dagRunId });
+      Logger.info('AirflowSessionClient.clearTaskInstances: Success', { dagId, dagRunId });
     } catch (error: any) {
-      Logger.error('AirflowStableClient.clearTaskInstances: Failed', error, { dagId, dagRunId });
+      Logger.error('AirflowSessionClient.clearTaskInstances: Failed', error, { dagId, dagRunId });
       throw error;
     }
   }
@@ -204,14 +199,14 @@ export class AirflowStableClient implements IAirflowClient {
   async listVariables(): Promise<Variable[]> {
     try {
       const response = await this.http.get<any>(`/api/v1/variables?limit=${Constants.DEFAULT_API_LIMIT}`);
-      Logger.debug('AirflowStableClient.listVariables: Success', { count: response.variables?.length });
+      Logger.debug('AirflowSessionClient.listVariables: Success', { count: response.variables?.length });
       return response.variables.map((v: any) => ({
         key: v.key,
         value: v.value,
         description: v.description
       }));
     } catch (error: any) {
-      Logger.error('AirflowStableClient.listVariables: Failed', error);
+      Logger.error('AirflowSessionClient.listVariables: Failed', error);
       throw error;
     }
   }
@@ -219,10 +214,10 @@ export class AirflowStableClient implements IAirflowClient {
   async getVariable(key: string): Promise<Variable> {
     try {
       const v = await this.http.get<any>(`/api/v1/variables/${key}`);
-      Logger.debug('AirflowStableClient.getVariable: Success', { key });
+      Logger.debug('AirflowSessionClient.getVariable: Success', { key });
       return { key: v.key, value: v.value, description: v.description };
     } catch (error: any) {
-      Logger.error('AirflowStableClient.getVariable: Failed', error, { key });
+      Logger.error('AirflowSessionClient.getVariable: Failed', error, { key });
       throw error;
     }
   }
@@ -239,9 +234,9 @@ export class AirflowStableClient implements IAirflowClient {
           throw patchError;
         }
       }
-      Logger.info('AirflowStableClient.upsertVariable: Success', { key });
+      Logger.info('AirflowSessionClient.upsertVariable: Success', { key });
     } catch (error: any) {
-      Logger.error('AirflowStableClient.upsertVariable: Failed', error, { key });
+      Logger.error('AirflowSessionClient.upsertVariable: Failed', error, { key });
       throw error;
     }
   }
@@ -249,9 +244,9 @@ export class AirflowStableClient implements IAirflowClient {
   async deleteVariable(key: string): Promise<void> {
     try {
       await this.http.delete(`/api/v1/variables/${key}`);
-      Logger.info('AirflowStableClient.deleteVariable: Success', { key });
+      Logger.info('AirflowSessionClient.deleteVariable: Success', { key });
     } catch (error: any) {
-      Logger.error('AirflowStableClient.deleteVariable: Failed', error, { key });
+      Logger.error('AirflowSessionClient.deleteVariable: Failed', error, { key });
       throw error;
     }
   }
@@ -259,7 +254,7 @@ export class AirflowStableClient implements IAirflowClient {
   async listPools(): Promise<Pool[]> {
     try {
       const response = await this.http.get<any>(`/api/v1/pools?limit=${Constants.DEFAULT_API_LIMIT}`);
-      Logger.debug('AirflowStableClient.listPools: Success', { count: response.pools?.length });
+      Logger.debug('AirflowSessionClient.listPools: Success', { count: response.pools?.length });
       return response.pools.map((p: any) => ({
         name: p.name,
         slots: p.slots,
@@ -269,7 +264,7 @@ export class AirflowStableClient implements IAirflowClient {
         description: p.description
       }));
     } catch (error: any) {
-      Logger.error('AirflowStableClient.listPools: Failed', error);
+      Logger.error('AirflowSessionClient.listPools: Failed', error);
       throw error;
     }
   }
@@ -277,7 +272,7 @@ export class AirflowStableClient implements IAirflowClient {
   async getPool(name: string): Promise<Pool> {
     try {
       const p = await this.http.get<any>(`/api/v1/pools/${name}`);
-      Logger.debug('AirflowStableClient.getPool: Success', { name });
+      Logger.debug('AirflowSessionClient.getPool: Success', { name });
       return {
         name: p.name,
         slots: p.slots,
@@ -287,7 +282,7 @@ export class AirflowStableClient implements IAirflowClient {
         description: p.description
       };
     } catch (error: any) {
-      Logger.error('AirflowStableClient.getPool: Failed', error, { name });
+      Logger.error('AirflowSessionClient.getPool: Failed', error, { name });
       throw error;
     }
   }
@@ -304,9 +299,9 @@ export class AirflowStableClient implements IAirflowClient {
           throw patchError;
         }
       }
-      Logger.info('AirflowStableClient.upsertPool: Success', { name });
+      Logger.info('AirflowSessionClient.upsertPool: Success', { name });
     } catch (error: any) {
-      Logger.error('AirflowStableClient.upsertPool: Failed', error, { name });
+      Logger.error('AirflowSessionClient.upsertPool: Failed', error, { name });
       throw error;
     }
   }
@@ -314,9 +309,9 @@ export class AirflowStableClient implements IAirflowClient {
   async deletePool(name: string): Promise<void> {
     try {
       await this.http.delete(`/api/v1/pools/${name}`);
-      Logger.info('AirflowStableClient.deletePool: Success', { name });
+      Logger.info('AirflowSessionClient.deletePool: Success', { name });
     } catch (error: any) {
-      Logger.error('AirflowStableClient.deletePool: Failed', error, { name });
+      Logger.error('AirflowSessionClient.deletePool: Failed', error, { name });
       throw error;
     }
   }
@@ -324,7 +319,7 @@ export class AirflowStableClient implements IAirflowClient {
   async listConnections(): Promise<Connection[]> {
     try {
       const response = await this.http.get<any>(`/api/v1/connections?limit=${Constants.DEFAULT_API_LIMIT}`);
-      Logger.debug('AirflowStableClient.listConnections: Success', { count: response.connections?.length });
+      Logger.debug('AirflowSessionClient.listConnections: Success', { count: response.connections?.length });
       return response.connections.map((c: any) => ({
         connectionId: c.connection_id,
         connType: c.conn_type,
@@ -335,7 +330,7 @@ export class AirflowStableClient implements IAirflowClient {
         extra: c.extra
       }));
     } catch (error: any) {
-      Logger.error('AirflowStableClient.listConnections: Failed', error);
+      Logger.error('AirflowSessionClient.listConnections: Failed', error);
       throw error;
     }
   }
@@ -343,7 +338,7 @@ export class AirflowStableClient implements IAirflowClient {
   async getConnection(connectionId: string): Promise<Connection> {
     try {
       const c = await this.http.get<any>(`/api/v1/connections/${connectionId}`);
-      Logger.debug('AirflowStableClient.getConnection: Success', { connectionId });
+      Logger.debug('AirflowSessionClient.getConnection: Success', { connectionId });
       return {
         connectionId: c.connection_id,
         connType: c.conn_type,
@@ -354,7 +349,7 @@ export class AirflowStableClient implements IAirflowClient {
         extra: c.extra
       };
     } catch (error: any) {
-      Logger.error('AirflowStableClient.getConnection: Failed', error, { connectionId });
+      Logger.error('AirflowSessionClient.getConnection: Failed', error, { connectionId });
       throw error;
     }
   }
@@ -379,9 +374,9 @@ export class AirflowStableClient implements IAirflowClient {
           throw patchError;
         }
       }
-      Logger.info('AirflowStableClient.upsertConnection: Success', { connectionId: connection.connectionId });
+      Logger.info('AirflowSessionClient.upsertConnection: Success', { connectionId: connection.connectionId });
     } catch (error: any) {
-      Logger.error('AirflowStableClient.upsertConnection: Failed', error, { connectionId: connection.connectionId });
+      Logger.error('AirflowSessionClient.upsertConnection: Failed', error, { connectionId: connection.connectionId });
       throw error;
     }
   }
@@ -389,9 +384,9 @@ export class AirflowStableClient implements IAirflowClient {
   async deleteConnection(connectionId: string): Promise<void> {
     try {
       await this.http.delete(`/api/v1/connections/${connectionId}`);
-      Logger.info('AirflowStableClient.deleteConnection: Success', { connectionId });
+      Logger.info('AirflowSessionClient.deleteConnection: Success', { connectionId });
     } catch (error: any) {
-      Logger.error('AirflowStableClient.deleteConnection: Failed', error, { connectionId });
+      Logger.error('AirflowSessionClient.deleteConnection: Failed', error, { connectionId });
       throw error;
     }
   }
@@ -399,18 +394,18 @@ export class AirflowStableClient implements IAirflowClient {
   async getHealth(): Promise<HealthStatus> {
     try {
       const health = await this.http.get<any>('/api/v1/health');
-      Logger.debug('AirflowStableClient.getHealth: Success');
-    return {
-      metadatabase: { status: health.metadatabase?.status || 'unknown' },
-      scheduler: { 
-        status: health.scheduler?.status || 'unknown',
-        latestHeartbeat: health.scheduler?.latest_scheduler_heartbeat
-      },
-      triggerer: health.triggerer ? { status: health.triggerer.status } : undefined,
-      dagProcessor: health.dag_processor ? { status: health.dag_processor.status } : undefined
-    };
+      Logger.debug('AirflowSessionClient.getHealth: Success');
+      return {
+        metadatabase: { status: health.metadatabase?.status || 'unknown' },
+        scheduler: { 
+          status: health.scheduler?.status || 'unknown',
+          latestHeartbeat: health.scheduler?.latest_scheduler_heartbeat
+        },
+        triggerer: health.triggerer ? { status: health.triggerer.status } : undefined,
+        dagProcessor: health.dag_processor ? { status: health.dag_processor.status } : undefined
+      };
     } catch (error: any) {
-      Logger.error('AirflowStableClient.getHealth: Failed', error);
+      Logger.error('AirflowSessionClient.getHealth: Failed', error);
       throw error;
     }
   }
@@ -418,11 +413,10 @@ export class AirflowStableClient implements IAirflowClient {
   async getDagStats(): Promise<any> {
     try {
       const response = await this.http.get<any>(`/api/v1/dags?limit=${Constants.DEFAULT_API_LIMIT}`);
-      // v1 has no dagStats endpoint - compute from dag list
       const dags = response.dags || [];
       return { total: dags.length, active: dags.filter((d: any) => !d.is_paused).length, paused: dags.filter((d: any) => d.is_paused).length };
     } catch (error: any) {
-      Logger.error('AirflowStableClient.getDagStats: Failed', error);
+      Logger.error('AirflowSessionClient.getDagStats: Failed', error);
       throw error;
     }
   }
@@ -432,23 +426,22 @@ export class AirflowStableClient implements IAirflowClient {
       const response = await this.http.get<any>('/api/v1/version');
       return response.version || 'unknown';
     } catch (error: any) {
-      Logger.error('AirflowStableClient.getVersion: Failed', error);
+      Logger.error('AirflowSessionClient.getVersion: Failed', error);
       return 'unknown';
     }
   }
 
   async getDagSource(dagId: string): Promise<string> {
     try {
-      // First get the file_token from dag details
       const dag = await this.http.get<any>(`/api/v1/dags/${dagId}`);
       const fileToken = dag.file_token;
       if (!fileToken) throw new Error('No file_token available for this DAG');
       const response = await this.http.get<any>(`/api/v1/dagSources/${fileToken}`);
-      Logger.debug('AirflowStableClient.getDagSource: Success', { dagId });
+      Logger.debug('AirflowSessionClient.getDagSource: Success', { dagId });
       if (typeof response === 'string') return response;
       return response.content || '';
     } catch (error: any) {
-      Logger.error('AirflowStableClient.getDagSource: Failed', error, { dagId });
+      Logger.error('AirflowSessionClient.getDagSource: Failed', error, { dagId });
       throw error;
     }
   }
@@ -460,9 +453,9 @@ export class AirflowStableClient implements IAirflowClient {
         : `/api/v1/dags/${dagId}/dagRuns/${dagRunId}/taskInstances/${taskId}`;
       // API v1 requires dry_run: false to actually change the state (defaults to true)
       await this.http.patch(url, { dry_run: false, new_state: state });
-      Logger.info('AirflowStableClient.setTaskInstanceState: Success', { dagId, taskId, state });
+      Logger.info('AirflowSessionClient.setTaskInstanceState: Success', { dagId, taskId, state });
     } catch (error: any) {
-      Logger.error('AirflowStableClient.setTaskInstanceState: Failed', error, { dagId, taskId });
+      Logger.error('AirflowSessionClient.setTaskInstanceState: Failed', error, { dagId, taskId });
       throw error;
     }
   }
@@ -470,9 +463,9 @@ export class AirflowStableClient implements IAirflowClient {
   async setDagRunState(dagId: string, dagRunId: string, state: string): Promise<void> {
     try {
       await this.http.patch(`/api/v1/dags/${dagId}/dagRuns/${dagRunId}`, { state });
-      Logger.info('AirflowStableClient.setDagRunState: Success', { dagId, dagRunId, state });
+      Logger.info('AirflowSessionClient.setDagRunState: Success', { dagId, dagRunId, state });
     } catch (error: any) {
-      Logger.error('AirflowStableClient.setDagRunState: Failed', error, { dagId, dagRunId });
+      Logger.error('AirflowSessionClient.setDagRunState: Failed', error, { dagId, dagRunId });
       throw error;
     }
   }
@@ -486,7 +479,7 @@ export class AirflowStableClient implements IAirflowClient {
       const response = await this.http.get<any>('/api/v1/config');
       return response;
     } catch (error: any) {
-      Logger.error('AirflowStableClient.getConfig: Failed', error);
+      Logger.error('AirflowSessionClient.getConfig: Failed', error);
       throw error;
     }
   }
@@ -496,7 +489,7 @@ export class AirflowStableClient implements IAirflowClient {
       const response = await this.http.get<any>('/api/v1/plugins');
       return response.plugins || [];
     } catch (error: any) {
-      Logger.error('AirflowStableClient.listPlugins: Failed', error);
+      Logger.error('AirflowSessionClient.listPlugins: Failed', error);
       throw error;
     }
   }

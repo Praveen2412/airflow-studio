@@ -106,7 +106,7 @@ export class ServerDetailsPanel {
       type: data.type as 'self-hosted' | 'mwaa',
       baseUrl: data.baseUrl,
       awsRegion: data.awsRegion || undefined,
-      authType: data.type === 'mwaa' ? 'aws' : 'basic',
+      authBackend: 'auto',  // Will be auto-detected
       username: data.username || undefined,
       apiMode: data.apiMode || 'auto',
       defaultRefreshInterval: 15,
@@ -328,7 +328,7 @@ ${STYLES}
     ${server.awsRegion ? `<div class="info-row"><span class="lbl">AWS Region</span><span>${esc(server.awsRegion)}</span></div>` : ''}
     <div class="info-row"><span class="lbl">API Mode</span><span><span class="tag">${esc(server.apiMode)}</span></span></div>
     ${server.username ? `<div class="info-row"><span class="lbl">Username</span><span>${esc(server.username)}</span></div>` : ''}
-    <div class="info-row"><span class="lbl">Auth Type</span><span>${esc(server.authType)}</span></div>
+    ${server.authBackend ? `<div class="info-row"><span class="lbl">Auth Backend</span><span><span class="tag">${esc(server.authBackend)}</span></span></div>` : ''}
   </div>
 
   <div>

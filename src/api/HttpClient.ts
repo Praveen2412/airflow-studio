@@ -25,11 +25,15 @@ export class HttpClient {
     // Request interceptor
     this.client.interceptors.request.use(
       (config) => {
+        const hasAuth = config.auth || config.headers?.Authorization;
+        const authType = config.auth ? 'Basic Auth' : (config.headers?.Authorization ? 'Bearer Token' : 'none');
         Logger.debug('HTTP Request', {
           method: config.method?.toUpperCase(),
           url: config.url,
           baseURL: config.baseURL,
-          auth: config.auth ? 'Basic Auth' : (config.headers?.Authorization ? 'Bearer Token' : 'none'),
+          auth: authType,
+          hasAuthHeader: !!config.headers?.Authorization,
+          hasAuthConfig: !!config.auth,
           dataSize: config.data ? JSON.stringify(config.data).length : 0
         });
         return config;
@@ -68,7 +72,11 @@ setAuth(username: string, password: string) {
     this.username = username;
     this.password = password;
     this.client.defaults.auth = { username, password };
-    Logger.debug('HttpClient: Basic auth configured');
+    Logger.debug('HttpClient: Basic auth configured', { 
+      username,
+      passwordLength: password.length,
+      hasSpecialChars: /[^a-zA-Z0-9]/.test(password)
+    });
   }
 
   async setTokenAuth(username: string, password: string) {
