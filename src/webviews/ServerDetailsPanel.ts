@@ -115,7 +115,9 @@ export class ServerDetailsPanel {
 
     await this.serverManager.addServer(profile, data.password || undefined);
     vscode.window.showInformationMessage(`Server "${data.name}" added`);
-    vscode.commands.executeCommand('airflow.refreshServers');
+    
+    // Trigger full refresh of servers tree and status bar
+    await vscode.commands.executeCommand('airflow.refreshServers');
     
     // Switch to the new server's details
     this.serverId = profile.id;

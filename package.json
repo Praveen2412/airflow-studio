@@ -280,6 +280,11 @@
           "when": "view == airflowServers && viewItem == dagsFolder"
         },
         {
+          "command": "airflow.refreshDags",
+          "when": "view == airflowServers && viewItem == dagsFolder",
+          "group": "inline@1"
+        },
+        {
           "command": "airflow.toggleFavoriteDag",
           "when": "view == airflowServers && viewItem == dag",
           "group": "inline@1"

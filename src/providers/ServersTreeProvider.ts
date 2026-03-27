@@ -31,6 +31,16 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeItemType
     this._onDidChangeTreeData.fire(undefined);
   }
 
+  clearDagCache(serverId?: string): void {
+    if (serverId) {
+      Logger.debug('ServersTreeProvider: Clearing DAG cache for server', { serverId });
+      this.dagCache.delete(serverId);
+    } else {
+      Logger.debug('ServersTreeProvider: Clearing all DAG caches');
+      this.dagCache.clear();
+    }
+  }
+
   getTreeItem(element: TreeItemType): vscode.TreeItem {
     return element;
   }
@@ -71,12 +81,15 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeItemType
         // Check cache first
         const cached = this.dagCache.get(element.server.id);
         const now = Date.now();
+        const cacheAge = cached ? now - cached.timestamp : Infinity;
+        const isCacheValid = cached && cacheAge < Constants.DAG_CACHE_TTL;
         
-        if (cached && (now - cached.timestamp) < Constants.DAG_CACHE_TTL) {
+        if (isCacheValid) {
           Logger.debug('ServersTreeProvider: Using cached DAGs', { 
             serverId: element.server.id, 
             count: cached.dags.length,
-            age: now - cached.timestamp 
+            age: cacheAge,
+            ttl: Constants.DAG_CACHE_TTL
           });
           let dags = cached.dags;
           
@@ -90,7 +103,12 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeItemType
         }
         
         // Cache miss or expired - fetch from API
-        Logger.debug('ServersTreeProvider: Fetching DAGs from API', { serverId: element.server.id });
+        Logger.debug('ServersTreeProvider: Cache expired or missing, fetching DAGs from API', { 
+          serverId: element.server.id,
+          cacheAge,
+          ttl: Constants.DAG_CACHE_TTL,
+          expired: cached ? cacheAge >= Constants.DAG_CACHE_TTL : false
+        });
         const client = await this.serverManager.getClient(element.server.id);
         if (!client) return [];
         
@@ -110,6 +128,8 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeItemType
         return filteredDags.map(dag => new DagTreeItem(dag, element.server.id, element.server.favoriteDags?.includes(dag.dagId) || false));
       } catch (error: any) {
         Logger.error('Failed to load DAGs', error, { serverId: element.server.id });
+        // Clear cache on error
+        this.dagCache.delete(element.server.id);
         return [];
       }
     }

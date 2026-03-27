@@ -51,6 +51,7 @@ export function activate(context: vscode.ExtensionContext) {
       { id: 'airflow.addServer', handler: addServer },
       { id: 'airflow.addServerPanel', handler: addServerPanel },
       { id: 'airflow.refreshServers', handler: refreshServers },
+      { id: 'airflow.refreshDags', handler: refreshDags },
       { id: 'airflow.toggleShowOnlyFavoriteServers', handler: toggleShowOnlyFavoriteServers },
       { id: 'airflow.toggleFavoriteServer', handler: toggleFavoriteServer },
       { id: 'airflow.toggleShowOnlyFavoriteDags', handler: toggleShowOnlyFavoriteDags },
@@ -192,7 +193,20 @@ async function updateAllServerHealth() {
 async function refreshServers() {
   Logger.info('=== USER ACTION: Refresh Servers ===');
   await updateAllServerHealth();
+  await loadActiveServer();
   vscode.window.showInformationMessage('Servers refreshed');
+}
+
+async function refreshDags(item: any) {
+  Logger.info('=== USER ACTION: Refresh DAGs ===');
+  const serverId = item?.server?.id;
+  if (serverId) {
+    Logger.debug('refreshDags: Clearing cache for server', { serverId });
+    // Clear the DAG cache for this server
+    serversTreeProvider.clearDagCache(serverId);
+  }
+  serversTreeProvider.refresh();
+  vscode.window.showInformationMessage('DAGs refreshed');
 }
 
 async function toggleShowOnlyFavoriteServers() {
