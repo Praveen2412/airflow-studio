@@ -142,7 +142,12 @@ setAuth(username: string, password: string) {
 
   async get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
     try {
-      const response = await this.client.get<T>(url, config);
+      // If Accept header is text/plain, set responseType to text
+      const finalConfig = { ...config };
+      if (config?.headers?.['Accept'] === 'text/plain') {
+        finalConfig.responseType = 'text';
+      }
+      const response = await this.client.get<T>(url, finalConfig);
       return response.data;
     } catch (error: any) {
       // If 401 and we have JWT credentials, try to refresh token
@@ -152,7 +157,11 @@ setAuth(username: string, password: string) {
         this.tokenExpiry = undefined;
         await this.setTokenAuth(this.username, this.password);
         // Retry the request
-        const response = await this.client.get<T>(url, config);
+        const finalConfig = { ...config };
+        if (config?.headers?.['Accept'] === 'text/plain') {
+          finalConfig.responseType = 'text';
+        }
+        const response = await this.client.get<T>(url, finalConfig);
         return response.data;
       }
       throw error;

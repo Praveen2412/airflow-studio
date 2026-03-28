@@ -453,7 +453,8 @@ export class AirflowStableClient implements IAirflowClient {
       const dag = await this.http.get<any>(`/api/v1/dags/${dagId}`);
       const fileToken = dag.file_token;
       if (!fileToken) throw new Error('No file_token available for this DAG');
-      const response = await this.http.get<any>(`/api/v1/dagSources/${fileToken}`);
+      // dagSources endpoint requires Accept: text/plain header
+      const response = await this.http.get<any>(`/api/v1/dagSources/${fileToken}`, { headers: { 'Accept': 'text/plain' } });
       Logger.debug('AirflowStableClient.getDagSource: Success', { dagId });
       if (typeof response === 'string') return response;
       return response.content || '';

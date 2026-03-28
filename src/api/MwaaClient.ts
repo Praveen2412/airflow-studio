@@ -24,10 +24,10 @@ export class MwaaClient implements IAirflowClient {
     
     if (awsProfile) {
       Logger.debug('MwaaClient: Using AWS profile', { profile: awsProfile });
-      // Use fromIni with explicit profile name
+      // Use fromIni with explicit profile name and force cache refresh
       clientConfig.credentials = fromIni({
         profile: awsProfile,
-        ignoreCache: false
+        ignoreCache: true  // Force reload credentials from file
       });
     } else {
       Logger.debug('MwaaClient: Using default credential chain');

@@ -108,9 +108,15 @@ export class NativeHttpClient {
 
             if (statusCode >= 200 && statusCode < 300) {
               try {
-                // Parse JSON response
-                const parsed = data ? JSON.parse(data) : null;
-                resolve(parsed as T);
+                // Check if response is text/plain
+                const contentType = res.headers['content-type'] || '';
+                if (contentType.includes('text/plain')) {
+                  resolve(data as T);
+                } else {
+                  // Parse JSON response
+                  const parsed = data ? JSON.parse(data) : null;
+                  resolve(parsed as T);
+                }
               } catch (parseError) {
                 Logger.error('NativeHttpClient: JSON parse error', parseError as Error, {
                   url: url.pathname,

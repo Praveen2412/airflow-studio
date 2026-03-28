@@ -432,8 +432,11 @@ export class AirflowV2Client implements IAirflowClient {
 
   async getDagSource(dagId: string): Promise<string> {
     try {
-      const response = await this.http.get<any>(`/api/v2/dagSources/${dagId}`);
+      // dagSources endpoint may require Accept: text/plain header
+      const response = await this.http.get<any>(`/api/v2/dagSources/${dagId}`, { headers: { 'Accept': 'text/plain' } });
       Logger.debug('AirflowV2Client.getDagSource: Success', { dagId });
+      // Response can be string (text/plain) or object with content property
+      if (typeof response === 'string') return response;
       return response.content || '';
     } catch (error: any) {
       Logger.error('AirflowV2Client.getDagSource: Failed', error, { dagId });

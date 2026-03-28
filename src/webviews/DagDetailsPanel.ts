@@ -18,7 +18,7 @@ export class DagDetailsPanel {
   ) {
     this.panel = vscode.window.createWebviewPanel(
       'airflowDagDetails', `DAG: ${dagId}`, vscode.ViewColumn.One,
-      { enableScripts: true, retainContextWhenHidden: false }
+      { enableScripts: true, retainContextWhenHidden: true }
     );
     this.panel.iconPath = {
       light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png'),
@@ -337,7 +337,7 @@ tr:hover{background:var(--vscode-list-hoverBackground)}
 #inlineView{display:none}
 .toolbar{display:flex;gap:6px;margin-bottom:8px;align-items:center}
 .toolbar h3{margin:0;flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-pre{background:var(--vscode-terminal-background,#1e1e1e);color:var(--vscode-terminal-foreground,#d4d4d4);padding:10px;border-radius:3px;overflow:auto;font-size:11px;white-space:pre-wrap;word-break:break-all;max-height:500px}
+pre{background:var(--vscode-terminal-background,#1e1e1e);color:var(--vscode-terminal-foreground,#d4d4d4);padding:10px;border-radius:3px;overflow:auto;font-size:11px;font-family:'Courier New',Consolas,monospace;white-space:pre;word-wrap:normal;max-height:calc(100vh - 120px);min-height:400px;line-height:1.4}
 .task-actions{display:flex;gap:3px;flex-wrap:wrap;align-items:center}
 select{background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);border-radius:2px;padding:2px 4px;font-size:10px;cursor:pointer}
 input,textarea{width:100%;padding:5px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);border-radius:3px;font-family:var(--vscode-font-family);font-size:11px}
