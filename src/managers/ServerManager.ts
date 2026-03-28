@@ -49,7 +49,8 @@ export class ServerManager {
           profile.headers,
           profile.type,
           profile.awsRegion,
-          profile.type === 'mwaa' ? profile.baseUrl : undefined
+          profile.type === 'mwaa' ? profile.baseUrl : undefined,
+          profile.awsProfile
         );
         
         profile.apiMode = result.apiVersion === 'v2' ? 'stable-v2' : 'stable-v1';
@@ -95,7 +96,8 @@ export class ServerManager {
         profile.headers,
         profile.type,
         profile.awsRegion,
-        profile.type === 'mwaa' ? profile.baseUrl : undefined
+        profile.type === 'mwaa' ? profile.baseUrl : undefined,
+        profile.awsProfile
       );
       return result.apiVersion === 'v2' ? 'stable-v2' : 'stable-v1';
     } catch (error) {
@@ -116,7 +118,8 @@ export class ServerManager {
         password,
         profile.headers,
         profile.type === 'mwaa' ? profile.baseUrl : undefined,
-        profile.awsRegion
+        profile.awsRegion,
+        profile.awsProfile
       );
     }
 
@@ -128,7 +131,8 @@ export class ServerManager {
       profile.headers,
       profile.type,
       profile.awsRegion,
-      profile.type === 'mwaa' ? profile.baseUrl : undefined
+      profile.type === 'mwaa' ? profile.baseUrl : undefined,
+      profile.awsProfile
     );
 
     // Update profile with detected values

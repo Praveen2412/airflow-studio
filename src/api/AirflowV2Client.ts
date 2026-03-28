@@ -1,22 +1,30 @@
 import { IAirflowClient, ClearTaskOptions } from './IAirflowClient';
 import { HttpClient } from './HttpClient';
+import { NativeHttpClient } from './NativeHttpClient';
 import { DagSummary, DagRun, TaskInstance, Variable, Pool, Connection, HealthStatus } from '../models';
 import { Logger } from '../utils/logger';
 import { Constants } from '../utils/constants';
 import { parseLogResponse } from '../utils/logParser';
 
 export class AirflowV2Client implements IAirflowClient {
-  private http: HttpClient;
+  private http: HttpClient | NativeHttpClient;
 
-  private constructor(baseUrl: string, headers?: Record<string, string>) {
-    this.http = new HttpClient(baseUrl, headers);
-    Logger.info('AirflowV2Client: Initialized');
+  private constructor(baseUrl: string, headers?: Record<string, string>, useNativeHttp?: boolean) {
+    if (useNativeHttp) {
+      // Use NativeHttpClient for MWAA JWT authentication
+      this.http = new NativeHttpClient(baseUrl, headers);
+      Logger.info('AirflowV2Client: Initialized (API v2) with NativeHttpClient');
+    } else {
+      // Use standard HttpClient for self-hosted
+      this.http = new HttpClient(baseUrl, headers);
+      Logger.info('AirflowV2Client: Initialized (API v2) with HttpClient');
+    }
   }
 
-  static async create(baseUrl: string, username?: string, password?: string, headers?: Record<string, string>): Promise<AirflowV2Client> {
-    const client = new AirflowV2Client(baseUrl, headers);
-    if (username && password) {
-      await client.http.setTokenAuth(username, password);
+  static async create(baseUrl: string, username?: string, password?: string, headers?: Record<string, string>, useNativeHttp?: boolean): Promise<AirflowV2Client> {
+    const client = new AirflowV2Client(baseUrl, headers, useNativeHttp);
+    if (username && password && !useNativeHttp) {
+      await (client.http as HttpClient).setTokenAuth(username, password);
     }
     return client;
   }

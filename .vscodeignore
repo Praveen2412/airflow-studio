@@ -7,7 +7,7 @@ tsconfig.json
 **/*.map
 **/*.ts
 !out/**/*.js
-
+aws
 # Logs and temporary files
 logs/**
 archive/**

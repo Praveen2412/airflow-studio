@@ -22,8 +22,8 @@ export class ServerDetailsPanel {
       { enableScripts: true, retainContextWhenHidden: true }
     );
     this.panel.iconPath = {
-      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg'),
-      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg')
+      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png'),
+      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png')
     };
     this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
@@ -79,6 +79,7 @@ export class ServerDetailsPanel {
       name: data.name,
       baseUrl: data.baseUrl,
       awsRegion: data.awsRegion || undefined,
+      awsProfile: data.awsProfile || undefined,
       username: data.username || undefined,
       apiMode: data.apiMode as any
     };
@@ -106,6 +107,7 @@ export class ServerDetailsPanel {
       type: data.type as 'self-hosted' | 'mwaa',
       baseUrl: data.baseUrl,
       awsRegion: data.awsRegion || undefined,
+      awsProfile: data.awsProfile || undefined,
       authBackend: 'auto',  // Will be auto-detected
       username: data.username || undefined,
       apiMode: data.apiMode || 'auto',
@@ -187,6 +189,9 @@ ${STYLES}
     <input id="fEnvName" type="text" placeholder="my-mwaa-environment">
     <label>AWS Region</label>
     <input id="fAwsRegion" type="text" value="us-east-1">
+    <label>AWS Profile (optional)</label>
+    <input id="fAwsProfile" type="text" placeholder="default">
+    <div class="help-text">💡 Leave empty to use default AWS credentials. Specify a profile name if using multiple AWS accounts or MFA.</div>
   </div>
   <label>API Mode</label>
   <select id="fApiMode">
@@ -213,6 +218,7 @@ document.getElementById('btnAdd').addEventListener('click',function(){
   const type=document.getElementById('fType').value;
   let baseUrl='';
   let awsRegion='';
+  let awsProfile='';
   let username='';
   let password='';
   if(type==='self-hosted'){
@@ -224,10 +230,11 @@ document.getElementById('btnAdd').addEventListener('click',function(){
     baseUrl=document.getElementById('fEnvName').value.trim();
     if(!baseUrl){alert('Environment name is required');return;}
     awsRegion=document.getElementById('fAwsRegion').value.trim();
+    awsProfile=document.getElementById('fAwsProfile').value.trim();
   }
   vscode.postMessage({
     command:'addServer',
-    data:{name,type,baseUrl,awsRegion,username,password,apiMode:document.getElementById('fApiMode').value}
+    data:{name,type,baseUrl,awsRegion,awsProfile,username,password,apiMode:document.getElementById('fApiMode').value}
   });
 });
 document.getElementById('btnCancel').addEventListener('click',function(){
@@ -280,6 +287,7 @@ document.getElementById('btnCancel').addEventListener('click',function(){
       type: server.type,
       baseUrl: server.baseUrl,
       awsRegion: server.awsRegion || '',
+      awsProfile: server.awsProfile || '',
       username: server.username || '',
       apiMode: server.apiMode
     });
@@ -326,6 +334,7 @@ ${STYLES}
     <div class="info-row"><span class="lbl">Type</span><span>${server.type === 'mwaa' ? 'AWS MWAA' : 'Self-hosted'}</span></div>
     <div class="info-row"><span class="lbl">Endpoint</span><span>${esc(server.baseUrl)}</span></div>
     ${server.awsRegion ? `<div class="info-row"><span class="lbl">AWS Region</span><span>${esc(server.awsRegion)}</span></div>` : ''}
+    ${server.awsProfile ? `<div class="info-row"><span class="lbl">AWS Profile</span><span>${esc(server.awsProfile)}</span></div>` : ''}
     <div class="info-row"><span class="lbl">API Mode</span><span><span class="tag">${esc(server.apiMode)}</span></span></div>
     ${server.username ? `<div class="info-row"><span class="lbl">Username</span><span>${esc(server.username)}</span></div>` : ''}
     ${server.authBackend ? `<div class="info-row"><span class="lbl">Auth Backend</span><span><span class="tag">${esc(server.authBackend)}</span></span></div>` : ''}
@@ -361,6 +370,9 @@ ${STYLES}
       <input id="eEnvName" type="text">
       <label>AWS Region</label>
       <input id="eAwsRegion" type="text">
+      <label>AWS Profile (optional)</label>
+      <input id="eAwsProfile" type="text" placeholder="default">
+      <div class="help-text">💡 Leave empty to use default AWS credentials. Specify a profile name if using multiple AWS accounts or MFA.</div>
     </div>
     <label>API Mode</label>
     <select id="eApiMode">
@@ -394,6 +406,7 @@ document.getElementById('btnEdit').addEventListener('click',function(){
   if(isMwaa){
     document.getElementById('eEnvName').value=server.baseUrl;
     document.getElementById('eAwsRegion').value=server.awsRegion;
+    document.getElementById('eAwsProfile').value=server.awsProfile||'';
   }else{
     document.getElementById('eBaseUrl').value=server.baseUrl;
     document.getElementById('eUsername').value=server.username;
@@ -411,6 +424,7 @@ document.getElementById('btnSave').addEventListener('click',function(){
   if(!name){alert('Server name is required');return;}
   let baseUrl='';
   let awsRegion='';
+  let awsProfile='';
   let username='';
   let password='';
   if(server.type==='self-hosted'){
@@ -422,10 +436,11 @@ document.getElementById('btnSave').addEventListener('click',function(){
     baseUrl=document.getElementById('eEnvName').value.trim();
     if(!baseUrl){alert('Environment name is required');return;}
     awsRegion=document.getElementById('eAwsRegion').value.trim();
+    awsProfile=document.getElementById('eAwsProfile').value.trim();
   }
   vscode.postMessage({
     command:'editServer',
-    data:{name,baseUrl,awsRegion,username,password,apiMode:document.getElementById('eApiMode').value}
+    data:{name,baseUrl,awsRegion,awsProfile,username,password,apiMode:document.getElementById('eApiMode').value}
   });
   document.getElementById('editMode').style.display='none';
   document.getElementById('viewMode').style.display='block';
@@ -474,6 +489,7 @@ button.danger{background:#c0392b;color:white}
 label{display:block;margin:12px 0 4px;font-weight:600;font-size:13px}
 input,select,textarea{width:100%;padding:8px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);border-radius:3px;font-family:var(--vscode-font-family);font-size:13px}
 .form-actions{margin-top:16px;display:flex;gap:8px}
+.help-text{font-size:12px;color:var(--vscode-descriptionForeground);margin-top:4px;padding:8px;background:var(--vscode-textBlockQuote-background);border-left:3px solid var(--vscode-textBlockQuote-border);border-radius:3px}
 `;
 
 function esc(v: any): string {

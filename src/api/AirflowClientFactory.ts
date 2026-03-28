@@ -25,13 +25,14 @@ export class AirflowClientFactory {
     headers?: Record<string, string>,
     type?: 'self-hosted' | 'mwaa',
     awsRegion?: string,
-    environmentName?: string
+    environmentName?: string,
+    awsProfile?: string
   ): Promise<AuthDetectionResult> {
     Logger.info('AirflowClientFactory: Starting auth detection', { baseUrl, type });
 
     // MWAA has its own flow
     if (type === 'mwaa' && environmentName && awsRegion) {
-      return await this.createMwaaClient(environmentName, awsRegion);
+      return await this.createMwaaClient(environmentName, awsRegion, awsProfile);
     }
 
     // For self-hosted, try different combinations
@@ -41,28 +42,58 @@ export class AirflowClientFactory {
   /**
    * Create MWAA client (tries v2 first, then v1)
    */
-  private static async createMwaaClient(environmentName: string, awsRegion: string): Promise<AuthDetectionResult> {
+  private static async createMwaaClient(environmentName: string, awsRegion: string, awsProfile?: string): Promise<AuthDetectionResult> {
+    let lastError: any;
+
     // Try API v2 first
     try {
       Logger.debug('AirflowClientFactory: Testing MWAA with API v2');
-      const client = new MwaaClient(environmentName, awsRegion, 'v2');
+      const client = new MwaaClient(environmentName, awsRegion, 'v2', awsProfile);
       await client.getHealth();
       Logger.info('AirflowClientFactory: MWAA API v2 works');
       return { apiVersion: 'v2', authBackend: 'aws', client };
-    } catch (error) {
+    } catch (error: any) {
+      lastError = error;
       Logger.debug('AirflowClientFactory: MWAA API v2 failed, trying v1');
     }
 
     // Fallback to API v1
     try {
-      const client = new MwaaClient(environmentName, awsRegion, 'v1');
+      const client = new MwaaClient(environmentName, awsRegion, 'v1', awsProfile);
       await client.getHealth();
       Logger.info('AirflowClientFactory: MWAA API v1 works');
       return { apiVersion: 'v1', authBackend: 'aws', client };
-    } catch (error) {
+    } catch (error: any) {
+      lastError = error;
       Logger.error('AirflowClientFactory: MWAA both versions failed', error);
-      throw new Error('Failed to connect to MWAA environment');
     }
+
+    // Provide user-friendly error message based on error type
+    if (lastError?.name === 'AccessDeniedException') {
+      throw new Error(
+        `AWS IAM permission denied. Please ensure:\n` +
+        `1. AWS credentials are configured${awsProfile ? ` for profile '${awsProfile}'` : ''} (run 'aws configure${awsProfile ? ` --profile ${awsProfile}` : ''}')\n` +
+        `2. Your IAM user/role has 'airflow:CreateWebLoginToken' permission\n` +
+        `3. Environment name '${environmentName}' exists in region '${awsRegion}'\n` +
+        `4. MWAA environment is in 'Available' state\n` +
+        `5. If using MFA, ensure your session token is valid`
+      );
+    }
+
+    if (lastError?.name === 'UnrecognizedClientException' || lastError?.name === 'InvalidClientTokenId') {
+      throw new Error(
+        `Invalid AWS credentials${awsProfile ? ` for profile '${awsProfile}'` : ''}. Please check:\n` +
+        `1. Profile '${awsProfile || 'default'}' exists in ~/.aws/credentials or ~/.aws/config\n` +
+        `2. Access key and secret key are valid\n` +
+        `3. If using temporary credentials, ensure they haven't expired\n` +
+        `4. If using session tokens, ensure field name is lowercase 'aws_session_token' (not 'AWS_SESSION_TOKEN')\n` +
+        `5. Run 'aws configure${awsProfile ? ` --profile ${awsProfile}` : ''}' to set up credentials\n` +
+        `6. Test with: aws sts get-caller-identity${awsProfile ? ` --profile ${awsProfile}` : ''}\n` +
+        `7. Test MWAA access: aws mwaa create-web-login-token --name ${environmentName} --region ${awsRegion}${awsProfile ? ` --profile ${awsProfile}` : ''}`
+      );
+    }
+
+    throw new Error(`Failed to connect to MWAA environment: ${lastError?.message || 'Unknown error'}`);
   }
 
   /**
@@ -171,12 +202,13 @@ export class AirflowClientFactory {
     password?: string,
     headers?: Record<string, string>,
     environmentName?: string,
-    awsRegion?: string
+    awsRegion?: string,
+    awsProfile?: string
   ): Promise<IAirflowClient> {
     Logger.debug('AirflowClientFactory: Creating client from profile', { apiVersion, authBackend });
 
     if (authBackend === 'aws' && environmentName && awsRegion) {
-      return new MwaaClient(environmentName, awsRegion, apiVersion === 'v2' ? 'v2' : 'v1');
+      return new MwaaClient(environmentName, awsRegion, apiVersion === 'v2' ? 'v2' : 'v1', awsProfile);
     }
 
     if (apiVersion === 'v2' && authBackend === 'jwt' && username && password) {

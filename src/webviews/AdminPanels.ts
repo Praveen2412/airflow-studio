@@ -96,8 +96,8 @@ export class VariablesPanel {
   private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri, private serverId: string) {
     this.panel = vscode.window.createWebviewPanel('airflowVariables', 'Airflow Variables', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: false });
     this.panel.iconPath = {
-      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg'),
-      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg')
+      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png'),
+      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png')
     };
     this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
@@ -229,8 +229,8 @@ export class PoolsPanel {
   private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri, private serverId: string) {
     this.panel = vscode.window.createWebviewPanel('airflowPools', 'Airflow Pools', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: false });
     this.panel.iconPath = {
-      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg'),
-      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg')
+      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png'),
+      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png')
     };
     this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
@@ -362,8 +362,8 @@ export class ConnectionsPanel {
   private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri, private serverId: string) {
     this.panel = vscode.window.createWebviewPanel('airflowConnections', 'Airflow Connections', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: false });
     this.panel.iconPath = {
-      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg'),
-      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg')
+      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png'),
+      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png')
     };
     this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
@@ -519,8 +519,8 @@ export class ConfigPanel {
   private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri, private serverId: string) {
     this.panel = vscode.window.createWebviewPanel('airflowConfig', 'Airflow Config', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: false });
     this.panel.iconPath = {
-      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg'),
-      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg')
+      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png'),
+      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png')
     };
     this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
@@ -582,8 +582,8 @@ export class PluginsPanel {
   private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri, private serverId: string) {
     this.panel = vscode.window.createWebviewPanel('airflowPlugins', 'Airflow Plugins', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: false });
     this.panel.iconPath = {
-      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg'),
-      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg')
+      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png'),
+      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png')
     };
     this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
@@ -638,8 +638,8 @@ export class ProvidersPanel {
   private constructor(private serverManager: ServerManager, extensionUri: vscode.Uri, private serverId: string) {
     this.panel = vscode.window.createWebviewPanel('airflowProviders', 'Airflow Providers', vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: false });
     this.panel.iconPath = {
-      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg'),
-      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg')
+      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png'),
+      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png')
     };
     this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);

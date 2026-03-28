@@ -11,6 +11,11 @@ export class HttpClient {
   private tokenExpiry?: number;
   private tokenPromise?: Promise<boolean>;
 
+  // Expose axios instance for advanced configuration
+  get axiosInstance(): AxiosInstance {
+    return this.client;
+  }
+
   constructor(baseURL: string, headers?: Record<string, string>) {
     this.baseURL = baseURL;
     this.client = axios.create({

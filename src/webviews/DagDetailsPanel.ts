@@ -21,8 +21,8 @@ export class DagDetailsPanel {
       { enableScripts: true, retainContextWhenHidden: false }
     );
     this.panel.iconPath = {
-      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg'),
-      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.svg')
+      light: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png'),
+      dark: vscode.Uri.joinPath(extensionUri, 'resources', 'airflow.png')
     };
     this.panel.webview.onDidReceiveMessage(msg => this.handleMessage(msg), null, this.disposables);
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);

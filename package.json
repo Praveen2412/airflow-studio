@@ -216,7 +216,7 @@
         {
           "id": "airflowStudio",
           "title": "Airflow Studio",
-          "icon": "resources/airflow.svg"
+          "icon": "resources/airflow.png"
         }
       ]
     },
@@ -316,6 +316,7 @@
     "lint": "eslint src --ext ts"
   },
   "devDependencies": {
+    "@aws-sdk/client-sts": "^3.1019.0",
     "@types/node": "^18.x",
     "@types/vscode": "^1.80.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",

@@ -1,28 +1,38 @@
 import { IAirflowClient, ClearTaskOptions } from './IAirflowClient';
 import { HttpClient } from './HttpClient';
+import { NativeHttpClient } from './NativeHttpClient';
 import { DagSummary, DagRun, TaskInstance, Variable, Pool, Connection, HealthStatus } from '../models';
 import { Logger } from '../utils/logger';
 import { Constants } from '../utils/constants';
 import { parseLogResponse } from '../utils/logParser';
 
 export class AirflowStableClient implements IAirflowClient {
-  private http: HttpClient;
+  private http: HttpClient | NativeHttpClient;
 
-  constructor(baseUrl: string, username?: string, password?: string, headers?: Record<string, string>) {
-    this.http = new HttpClient(baseUrl, headers);
-    if (username && password) {
-      this.http.setAuth(username, password);
-      Logger.info('AirflowStableClient: Initialized (API v1) with Basic Auth', { 
-        username, 
-        hasPassword: !!password,
-        passwordLength: password?.length || 0
+  constructor(baseUrl: string, username?: string, password?: string, headers?: Record<string, string>, useNativeHttp?: boolean) {
+    if (useNativeHttp) {
+      // Use NativeHttpClient for MWAA cookie authentication
+      this.http = new NativeHttpClient(baseUrl, headers);
+      Logger.info('AirflowStableClient: Initialized (API v1) with NativeHttpClient', { 
+        hasHeaders: !!headers
       });
     } else {
-      Logger.info('AirflowStableClient: Initialized (API v1) without auth', { 
-        hasUsername: !!username, 
-        hasPassword: !!password,
-        username: username || 'none'
-      });
+      // Use standard HttpClient for self-hosted
+      this.http = new HttpClient(baseUrl, headers);
+      if (username && password) {
+        (this.http as HttpClient).setAuth(username, password);
+        Logger.info('AirflowStableClient: Initialized (API v1) with Basic Auth', { 
+          username, 
+          hasPassword: !!password,
+          passwordLength: password?.length || 0
+        });
+      } else {
+        Logger.info('AirflowStableClient: Initialized (API v1) without auth', { 
+          hasUsername: !!username, 
+          hasPassword: !!password,
+          username: username || 'none'
+        });
+      }
     }
   }
 

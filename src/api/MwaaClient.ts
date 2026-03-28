@@ -1,11 +1,11 @@
 import { IAirflowClient, ClearTaskOptions } from './IAirflowClient';
 import { DagSummary, DagRun, TaskInstance, Variable, Pool, Connection, HealthStatus } from '../models';
 import { MWAAClient, CreateWebLoginTokenCommand } from '@aws-sdk/client-mwaa';
-import { HttpClient } from './HttpClient';
+import { fromIni, fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import { AirflowStableClient } from './AirflowStableClient';
 import { AirflowV2Client } from './AirflowV2Client';
 import { Logger } from '../utils/logger';
-import axios from 'axios';
+import * as https from 'https';
 
 export class MwaaClient implements IAirflowClient {
   private mwaaClient: MWAAClient;
@@ -15,11 +15,29 @@ export class MwaaClient implements IAirflowClient {
   private webserverUrl?: string;
   private tokenExpiry?: number;
 
-  constructor(environmentName: string, region: string, apiVersion: 'v1' | 'v2' = 'v1') {
+  constructor(environmentName: string, region: string, apiVersion: 'v1' | 'v2' = 'v1', awsProfile?: string) {
     this.environmentName = environmentName;
     this.apiVersion = apiVersion;
-    this.mwaaClient = new MWAAClient({ region });
-    Logger.info('MwaaClient: Initialized', { environmentName, region, apiVersion });
+    
+    // Use specified AWS profile or default credentials
+    const clientConfig: any = { region };
+    
+    if (awsProfile) {
+      Logger.debug('MwaaClient: Using AWS profile', { profile: awsProfile });
+      // Use fromIni with explicit profile name
+      clientConfig.credentials = fromIni({
+        profile: awsProfile,
+        ignoreCache: false
+      });
+    } else {
+      Logger.debug('MwaaClient: Using default credential chain');
+      // Use default credential provider chain
+      clientConfig.credentials = fromNodeProviderChain();
+    }
+    
+    this.mwaaClient = new MWAAClient(clientConfig);
+    
+    Logger.info('MwaaClient: Initialized', { environmentName, region, apiVersion, awsProfile: awsProfile || 'default' });
   }
 
   private async refreshToken(): Promise<void> {
@@ -33,45 +51,106 @@ export class MwaaClient implements IAirflowClient {
       this.webserverUrl = response.WebServerHostname || '';
       const webToken = response.WebToken || '';
       
-      // Step 2: Exchange for JWT token via login endpoint
-      const loginPath = this.apiVersion === 'v1' 
-        ? '/aws_mwaa/login' 
-        : '/pluginsv2/aws_mwaa/login';
-      
-      const loginResponse = await axios.get(`https://${this.webserverUrl}${loginPath}`, {
-        params: { your_token_here: webToken },
-        maxRedirects: 0,
-        validateStatus: (status) => status >= 200 && status < 400
+      Logger.debug('MwaaClient.refreshToken: Got web token', { 
+        webserverUrl: this.webserverUrl,
+        tokenLength: webToken.length 
       });
       
-      // Step 3: Extract JWT token from _token cookie
-      const cookies = loginResponse.headers['set-cookie'] || [];
-      const jwtToken = cookies.find(c => c.startsWith('_token='))?.split('=')[1]?.split(';')[0];
+      // Step 2: Exchange web token for session/JWT token via POST to MWAA login endpoint
+      // MWAA provides custom login endpoints that return authentication tokens:
+      // - Airflow 2.x (v1): POST to /aws_mwaa/login → returns 'session' cookie
+      // - Airflow 3.x (v2): POST to /pluginsv2/aws_mwaa/login → returns '_token' JWT cookie
+      // After authentication, standard Airflow API endpoints are used (/api/v1/* or /api/v2/*)
+      const loginPath = this.apiVersion === 'v2' 
+        ? '/pluginsv2/aws_mwaa/login' 
+        : '/aws_mwaa/login';
+      const loginData = new URLSearchParams({ token: webToken }).toString();
       
-      if (!jwtToken) {
-        throw new Error('Failed to extract JWT token from MWAA login response');
-      }
+      Logger.debug('MwaaClient.refreshToken: Logging in to MWAA', { loginPath, apiVersion: this.apiVersion });
       
-      // Step 4: Create delegate client (v1 or v2) with JWT token
-      const baseUrl = `https://${this.webserverUrl}`;
-      const headers = { 'Authorization': `Bearer ${jwtToken}` };
+      // Use native HTTPS to avoid axios cookie compatibility issues
+      const authToken = await new Promise<{ type: 'session' | 'jwt', value: string }>((resolve, reject) => {
+        const req = https.request({
+          hostname: this.webserverUrl,
+          port: 443,
+          path: loginPath,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': Buffer.byteLength(loginData)
+          }
+        }, (res) => {
+          const cookies = res.headers['set-cookie'] || [];
+          
+          if (this.apiVersion === 'v2') {
+            // Airflow 3.x: Extract JWT token from _token cookie
+            const tokenCookie = cookies.find(c => c.startsWith('_token='));
+            if (tokenCookie) {
+              const value = tokenCookie.split('=')[1]?.split(';')[0];
+              Logger.debug('MwaaClient.refreshToken: JWT token obtained', { 
+                tokenLength: value?.length 
+              });
+              resolve({ type: 'jwt', value });
+            } else {
+              reject(new Error('Failed to extract _token JWT cookie from MWAA v2 login response'));
+            }
+          } else {
+            // Airflow 2.x: Extract session cookie
+            const sessionCookie = cookies.find(c => c.startsWith('session='));
+            if (sessionCookie) {
+              const value = sessionCookie.split('=')[1]?.split(';')[0];
+              Logger.debug('MwaaClient.refreshToken: Session cookie obtained', { 
+                cookieLength: value?.length 
+              });
+              resolve({ type: 'session', value });
+            } else {
+              reject(new Error('Failed to extract session cookie from MWAA v1 login response'));
+            }
+          }
+        });
+        
+        req.on('error', (error) => {
+          Logger.error('MwaaClient.refreshToken: Login request failed', error);
+          reject(error);
+        });
+        
+        req.write(loginData);
+        req.end();
+      });
       
-      if (this.apiVersion === 'v2') {
-        this.delegateClient = await AirflowV2Client.create(baseUrl, undefined, undefined, headers);
-        const httpClient = new HttpClient(baseUrl, headers);
-        (this.delegateClient as any).http = httpClient;
+      // Step 3: Create standard Airflow client with MWAA authentication
+      // Use NativeHttpClient instead of axios to avoid cookie/JWT compatibility issues
+      // The clients use standard Airflow API endpoints (/api/v1/* or /api/v2/*)
+      const baseURL = `https://${this.webserverUrl}`;
+      
+      if (authToken.type === 'jwt') {
+        // Airflow 3.x: Use AirflowV2Client with JWT Bearer token
+        const headers = {
+          'Authorization': `Bearer ${authToken.value}`,
+          'Content-Type': 'application/json'
+        };
+        this.delegateClient = await AirflowV2Client.create(baseURL, undefined, undefined, headers, true);
       } else {
-        this.delegateClient = new AirflowStableClient(baseUrl, undefined, undefined, headers);
-        const httpClient = new HttpClient(baseUrl, headers);
-        (this.delegateClient as any).http = httpClient;
+        // Airflow 2.x: Use AirflowStableClient with session cookie
+        const headers = {
+          'Cookie': `session=${authToken.value}`
+        };
+        this.delegateClient = new AirflowStableClient(baseURL, undefined, undefined, headers, true);
       }
       
-      // Cache token for 50 minutes (MWAA tokens typically valid for 60 minutes)
-      this.tokenExpiry = Date.now() + (50 * 60 * 1000);
+      // Cache token for 11 hours (MWAA tokens expire after 12 hours)
+      this.tokenExpiry = Date.now() + (11 * 60 * 60 * 1000);
       
-      Logger.info('MwaaClient.refreshToken: Success', { apiVersion: this.apiVersion });
+      Logger.info('MwaaClient.refreshToken: Success', { 
+        apiVersion: this.apiVersion,
+        authType: authToken.type,
+        tokenExpiryHours: 11
+      });
     } catch (error: any) {
-      Logger.error('MwaaClient.refreshToken: Failed', error, { environmentName: this.environmentName });
+      Logger.error('MwaaClient.refreshToken: Failed', error, { 
+        environmentName: this.environmentName,
+        apiVersion: this.apiVersion
+      });
       throw error;
     }
   }
