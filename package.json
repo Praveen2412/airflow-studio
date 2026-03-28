@@ -13,8 +13,30 @@
     "vscode": "^1.80.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Data Science",
+    "Visualization"
   ],
+  "keywords": [
+    "airflow",
+    "apache-airflow",
+    "mwaa",
+    "aws",
+    "dag",
+    "workflow",
+    "orchestration",
+    "data-engineering",
+    "etl"
+  ],
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Praveen2412/airflow-studio/issues"
+  },
+  "homepage": "https://github.com/Praveen2412/airflow-studio#readme",
+  "galleryBanner": {
+    "color": "#017CEE",
+    "theme": "dark"
+  },
   "activationEvents": [
     "onView:airflowServers"
   ],
@@ -316,18 +338,18 @@
     "lint": "eslint src --ext ts"
   },
   "devDependencies": {
-    "@aws-sdk/client-sts": "^3.1019.0",
     "@types/node": "^18.x",
     "@types/vscode": "^1.80.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "eslint": "^8.40.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "@vscode/vsce": "^2.22.0"
   },
   "dependencies": {
     "@aws-sdk/client-mwaa": "^3.400.0",
+    "@aws-sdk/client-sts": "^3.400.0",
     "@aws-sdk/credential-providers": "^3.400.0",
-    "axios": "^1.6.0",
-    "vsce": "^2.15.0"
+    "axios": "^1.6.0"
   }
 }

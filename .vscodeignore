@@ -3,11 +3,12 @@
 .vscode-test/**
 src/**
 .gitignore
+.eslintrc.json
 tsconfig.json
 **/*.map
 **/*.ts
 !out/**/*.js
-aws
+
 # Logs and temporary files
 logs/**
 archive/**
@@ -17,9 +18,22 @@ docs/**
 .amazonq/**
 airflow_docs/**
 dag_details_html.txt
+CODE_ANALYSIS.md
+IMPLEMENTATION_SUMMARY.md
+MWAA_FINAL_ARCHITECTURE.md
+MWAA_NATIVE_HTTPS_IMPLEMENTATION.md
+VERIFICATION_CHECKLIST.md
+
+# Test files
+tests/**
+test-*.js
 
 # Package files
 *.vsix
+
+# Git files
+.git/**
+.github/**
 
 # Node modules optimization
 node_modules/@types/**

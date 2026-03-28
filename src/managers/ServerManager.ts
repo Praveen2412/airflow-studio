@@ -107,8 +107,12 @@ export class ServerManager {
   }
 
   private async createClient(profile: ServerProfile, password?: string): Promise<IAirflowClient> {
-    // If auth backend is known, use it directly (faster)
-    if (profile.authBackend && profile.authBackend !== 'auto') {
+    // If auth backend is known, use it directly (faster - no detection needed)
+    if (profile.authBackend && profile.authBackend !== 'auto' && profile.apiMode !== 'auto') {
+      Logger.debug('ServerManager.createClient: Using saved API and auth', { 
+        apiMode: profile.apiMode, 
+        authBackend: profile.authBackend 
+      });
       const apiVersion: ApiVersion = profile.apiMode === 'stable-v2' ? 'v2' : 'v1';
       return await AirflowClientFactory.createClientFromProfile(
         profile.baseUrl,
@@ -123,7 +127,8 @@ export class ServerManager {
       );
     }
 
-    // Otherwise, detect (should only happen on first connection)
+    // Otherwise, detect and save (should only happen on first connection)
+    Logger.info('ServerManager.createClient: Detecting API and auth', { name: profile.name });
     const result = await AirflowClientFactory.createClient(
       profile.baseUrl,
       profile.username,
@@ -135,10 +140,14 @@ export class ServerManager {
       profile.awsProfile
     );
 
-    // Update profile with detected values
+    // Save detected values to profile
     profile.apiMode = result.apiVersion === 'v2' ? 'stable-v2' : 'stable-v1';
     profile.authBackend = result.authBackend;
-    await this.updateServer(profile, password);
+    await this.updateServerSilently(profile);
+    Logger.info('ServerManager.createClient: Saved detected API and auth', { 
+      apiMode: profile.apiMode, 
+      authBackend: profile.authBackend 
+    });
 
     return result.client;
   }
@@ -156,6 +165,18 @@ export class ServerManager {
       
       // Clear cached client to force recreation with new settings
       this.clientCache.delete(profile.id);
+    }
+  }
+
+  /**
+   * Update server profile without clearing cache (used for saving detected API/auth)
+   */
+  private async updateServerSilently(profile: ServerProfile): Promise<void> {
+    const servers = await this.getServers();
+    const index = servers.findIndex(s => s.id === profile.id);
+    if (index >= 0) {
+      servers[index] = profile;
+      await this.context.globalState.update('airflow.servers', servers);
     }
   }
 
@@ -218,15 +239,47 @@ export class ServerManager {
   async testConnection(serverId: string): Promise<{ success: boolean; message: string }> {
     try {
       Logger.info('ServerManager.testConnection: Starting', { serverId });
+      
+      // Clear cache to force fresh detection
+      this.clientCache.delete(serverId);
+      
+      const servers = await this.getServers();
+      const server = servers.find(s => s.id === serverId);
+      if (!server) {
+        return { success: false, message: 'Server not found' };
+      }
+
+      // Force re-detection by temporarily setting to auto
+      const originalApiMode = server.apiMode;
+      const originalAuthBackend = server.authBackend;
+      server.apiMode = 'auto';
+      server.authBackend = 'auto';
+      
       const client = await this.getClient(serverId);
       if (!client) {
-        return { success: false, message: 'Server not found' };
+        // Restore original values if detection failed
+        server.apiMode = originalApiMode;
+        server.authBackend = originalAuthBackend;
+        return { success: false, message: 'Failed to create client' };
       }
       
       // Test with authenticated endpoint (listDags requires auth)
       await client.listDags();
-      Logger.info('ServerManager.testConnection: Success', { serverId });
-      return { success: true, message: 'Connection and authentication successful' };
+      
+      // Get updated server profile with detected values
+      const updatedServers = await this.getServers();
+      const updatedServer = updatedServers.find(s => s.id === serverId);
+      
+      Logger.info('ServerManager.testConnection: Success', { 
+        serverId, 
+        apiMode: updatedServer?.apiMode, 
+        authBackend: updatedServer?.authBackend 
+      });
+      
+      return { 
+        success: true, 
+        message: `Connection successful (API: ${updatedServer?.apiMode}, Auth: ${updatedServer?.authBackend})` 
+      };
     } catch (error: any) {
       Logger.error('ServerManager.testConnection: Failed', error, { serverId });
       const message = error.status === 401 
