@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import { ServerProfile, DagSummary } from '../models';
 import { ServerManager } from '../managers/ServerManager';
+import { CodeTreeProvider, CodeFolderItem, CodeFileItem, CodeNotConfiguredItem } from './CodeTreeProvider';
 import { Logger } from '../utils/logger';
 import { Constants } from '../utils/constants';
 
-type TreeItemType = ServerTreeItem | DagsFolderItem | AdminFolderItem | DagTreeItem | AdminItemTreeItem | NoServersItem;
+type TreeItemType = ServerTreeItem | DagsFolderItem | AdminFolderItem | CodeFolderItem | CodeFileItem | CodeNotConfiguredItem | DagTreeItem | AdminItemTreeItem | NoServersItem;
 
 interface DagCache {
   dags: DagSummary[];
@@ -19,6 +20,7 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeItemType
   private showOnlyFavoriteServers = false;
   private showOnlyFavoriteDagsPerServer = new Map<string, boolean>();
   private dagCache = new Map<string, DagCache>();
+  private codeTreeProvider = new CodeTreeProvider();
 
   constructor(private serverManager: ServerManager) {
     Logger.debug('ServersTreeProvider: Initialized');
@@ -69,7 +71,8 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeItemType
       
       return [
         new DagsFolderItem(element.server, this.hiddenDagsFolders.has(element.server.id)),
-        new AdminFolderItem(element.server)
+        new AdminFolderItem(element.server),
+        new CodeFolderItem(element.server)
       ];
     }
 
@@ -132,6 +135,10 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeItemType
         this.dagCache.delete(element.server.id);
         return [];
       }
+    }
+
+    if (element instanceof CodeFolderItem || (element instanceof CodeFileItem && element.isDirectory)) {
+      return this.codeTreeProvider.getChildren(element as CodeFolderItem | CodeFileItem);
     }
 
     if (element instanceof AdminFolderItem) {

@@ -1,3 +1,21 @@
+export interface CodeConfig {
+  // MWAA: S3 source
+  s3Bucket?: string;       // e.g. "my-mwaa-bucket"
+  s3Prefix?: string;       // e.g. "dags/"
+
+  // Self-hosted local
+  localDagsPath?: string;  // e.g. "/usr/local/airflow/dags"
+
+  // Self-hosted remote (SSH)
+  remoteHost?: string;
+  remoteUser?: string;
+  remoteDagsPath?: string; // e.g. "/opt/airflow/dags"
+  remoteKeyPath?: string;  // e.g. "~/.ssh/id_rsa"
+
+  // Common
+  localWorkspacePath?: string; // local folder where files are synced to
+}
+
 export interface ServerProfile {
   id: string;
   name: string;
@@ -14,6 +32,7 @@ export interface ServerProfile {
   lastSyncedTimestamp?: number;
   isFavorite?: boolean;
   favoriteDags?: string[];
+  codeConfig?: CodeConfig;
 }
 
 export interface DagSummary {

@@ -2,6 +2,29 @@
 
 All notable changes to the "Airflow Studio" extension will be documented in this file.
 
+## [0.2.0] - 2026-06-01
+
+### Added
+- **Code Management**: New "Code" section under each server in the tree view
+  - Browse DAG files (all file types) directly in VS Code
+  - Pull files from source to local workspace
+  - Push local changes back to source
+  - Upload individual files to source
+  - Create new files (opens empty file in editor)
+  - Delete files from both local workspace and source
+- **MWAA S3 Sync**: Pull/push DAG files via `aws s3 sync` CLI
+  - Configure S3 bucket and prefix per server
+  - Uses existing AWS profile/region from server config
+- **Self-hosted Local Sync**: Direct file copy from/to local DAGs path
+- **Self-hosted Remote Sync**: rsync/scp over SSH for remote Airflow servers
+  - Configure remote host, user, DAGs path, and optional SSH key
+- **Code Configuration**: Optional code settings in Add/Edit Server panel
+  - MWAA: S3 bucket + prefix
+  - Self-hosted local: local DAGs path
+  - Self-hosted remote: SSH host, user, path, key
+  - Custom local workspace path override
+- If code not configured, tree shows "Configure code settings" prompt
+
 ## [0.1.0] - 2026-03-25
 
 ### Added

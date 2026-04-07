@@ -2,7 +2,7 @@
   "name": "airflow-studio",
   "displayName": "Airflow Studio",
   "description": "Comprehensive Apache Airflow and AWS MWAA management studio for VS Code",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "PraveenVeerapathiran",
   "icon": "resources/airflow.png",
   "repository": {
@@ -231,6 +231,41 @@
       {
         "command": "airflow.openHealthCheck",
         "title": "Airflow Studio: Open Health Check"
+      },
+      {
+        "command": "airflow.code.configure",
+        "title": "Airflow Studio: Configure Code Settings",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "airflow.code.pull",
+        "title": "Airflow Studio: Pull from Source",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "airflow.code.push",
+        "title": "Airflow Studio: Push to Source",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "airflow.code.newFile",
+        "title": "Airflow Studio: New DAG File",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "airflow.code.openFile",
+        "title": "Airflow Studio: Open File",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "airflow.code.uploadFile",
+        "title": "Airflow Studio: Upload File to Source",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "airflow.code.deleteFile",
+        "title": "Airflow Studio: Delete File",
+        "icon": "$(trash)"
       }
     ],
     "viewsContainers": {
@@ -327,6 +362,61 @@
         {
           "command": "airflow.unpauseDag",
           "when": "view == airflowServers && viewItem == dag"
+        },
+        {
+          "command": "airflow.code.configure",
+          "when": "view == airflowServers && viewItem == codeNotConfigured"
+        },
+        {
+          "command": "airflow.code.pull",
+          "when": "view == airflowServers && viewItem == codeFolder",
+          "group": "inline@1"
+        },
+        {
+          "command": "airflow.code.push",
+          "when": "view == airflowServers && viewItem == codeFolder",
+          "group": "inline@2"
+        },
+        {
+          "command": "airflow.code.newFile",
+          "when": "view == airflowServers && viewItem == codeFolder",
+          "group": "inline@3"
+        },
+        {
+          "command": "airflow.code.configure",
+          "when": "view == airflowServers && viewItem == codeFolder",
+          "group": "inline@4"
+        },
+        {
+          "command": "airflow.code.newFile",
+          "when": "view == airflowServers && viewItem == codeDirectory",
+          "group": "inline@1"
+        },
+        {
+          "command": "airflow.code.uploadFile",
+          "when": "view == airflowServers && viewItem == codeFile",
+          "group": "inline@1"
+        },
+        {
+          "command": "airflow.code.deleteFile",
+          "when": "view == airflowServers && viewItem == codeFile",
+          "group": "inline@2"
+        },
+        {
+          "command": "airflow.code.uploadFile",
+          "when": "view == airflowServers && viewItem == codeFile"
+        },
+        {
+          "command": "airflow.code.deleteFile",
+          "when": "view == airflowServers && viewItem == codeFile"
+        },
+        {
+          "command": "airflow.code.pull",
+          "when": "view == airflowServers && viewItem == codeFolder"
+        },
+        {
+          "command": "airflow.code.push",
+          "when": "view == airflowServers && viewItem == codeFolder"
         }
       ]
     }
@@ -348,6 +438,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-mwaa": "^3.400.0",
+    "@aws-sdk/client-s3": "^3.400.0",
     "@aws-sdk/client-sts": "^3.400.0",
     "@aws-sdk/credential-providers": "^3.400.0",
     "axios": "^1.6.0"

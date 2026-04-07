@@ -62,6 +62,9 @@ export class ServerDetailsPanel {
         case 'addServer':
           await this.addServer(msg.data);
           break;
+        case 'saveCodeConfig':
+          await this.saveCodeConfig(msg.data);
+          break;
       }
     } catch (error: any) {
       Logger.error('ServerDetailsPanel.handleMessage: Failed', error);
@@ -81,7 +84,8 @@ export class ServerDetailsPanel {
       awsRegion: data.awsRegion || undefined,
       awsProfile: data.awsProfile || undefined,
       username: data.username || undefined,
-      apiMode: data.apiMode as any
+      apiMode: data.apiMode as any,
+      codeConfig: data.codeEnabled ? buildCodeConfig(data) : undefined
     };
 
     await this.serverManager.updateServer(updated, data.password || undefined);
@@ -94,10 +98,29 @@ export class ServerDetailsPanel {
     const server = servers.find(s => s.id === this.serverId);
     if (!server) return;
 
+    const confirm = await vscode.window.showWarningMessage(
+      `Delete server "${server.name}"? This cannot be undone.`,
+      { modal: true },
+      'Delete'
+    );
+    if (confirm !== 'Delete') return;
+
     await this.serverManager.deleteServer(this.serverId);
     vscode.window.showInformationMessage(`Server "${server.name}" deleted`);
     vscode.commands.executeCommand('airflow.refreshServers');
     this.panel.dispose();
+  }
+
+  private async saveCodeConfig(data: any) {
+    const servers = await this.serverManager.getServers();
+    const server = servers.find(s => s.id === this.serverId);
+    if (!server) return;
+
+    server.codeConfig = buildCodeConfig(data);
+    await this.serverManager.updateServer(server);
+    vscode.window.showInformationMessage('Code settings saved');
+    await vscode.commands.executeCommand('airflow.refreshServers');
+    this.update();
   }
 
   private async addServer(data: any) {
@@ -112,7 +135,8 @@ export class ServerDetailsPanel {
       username: data.username || undefined,
       apiMode: data.apiMode || 'auto',
       defaultRefreshInterval: 15,
-      lastHealthStatus: 'unknown'
+      lastHealthStatus: 'unknown',
+      codeConfig: data.codeEnabled ? buildCodeConfig(data) : undefined
     };
 
     await this.serverManager.addServer(profile, data.password || undefined);
@@ -204,6 +228,7 @@ ${STYLES}
     <button class="secondary" id="btnCancel">Cancel</button>
   </div>
 </div>
+${codeConfigSection('f', 'self-hosted')}
 <script>
 (function(){
 const vscode=acquireVsCodeApi();
@@ -234,7 +259,16 @@ document.getElementById('btnAdd').addEventListener('click',function(){
   }
   vscode.postMessage({
     command:'addServer',
-    data:{name,type,baseUrl,awsRegion,awsProfile,username,password,apiMode:document.getElementById('fApiMode').value}
+    data:{name,type,baseUrl,awsRegion,awsProfile,username,password,apiMode:document.getElementById('fApiMode').value,
+      codeEnabled:document.getElementById('fCodeEnabled')?.checked||false,
+      s3Bucket:document.getElementById('fS3Bucket')?.value.trim()||'',
+      s3Prefix:document.getElementById('fS3Prefix')?.value.trim()||'dags/',
+      localDagsPath:document.getElementById('fLocalDagsPath')?.value.trim()||'',
+      remoteHost:document.getElementById('fRemoteHost')?.value.trim()||'',
+      remoteUser:document.getElementById('fRemoteUser')?.value.trim()||'',
+      remoteDagsPath:document.getElementById('fRemoteDagsPath')?.value.trim()||'',
+      remoteKeyPath:document.getElementById('fRemoteKeyPath')?.value.trim()||'',
+      localWorkspacePath:document.getElementById('fLocalWorkspacePath')?.value.trim()||''}
   });
 });
 document.getElementById('btnCancel').addEventListener('click',function(){
@@ -385,6 +419,7 @@ ${STYLES}
       <button class="secondary" id="btnCancelEdit">Cancel</button>
     </div>
   </div>
+  ${codeConfigSection('e', server.type, server.codeConfig)}
 </div>
 
 <script>
@@ -440,16 +475,23 @@ document.getElementById('btnSave').addEventListener('click',function(){
   }
   vscode.postMessage({
     command:'editServer',
-    data:{name,baseUrl,awsRegion,awsProfile,username,password,apiMode:document.getElementById('eApiMode').value}
+    data:{name,baseUrl,awsRegion,awsProfile,username,password,apiMode:document.getElementById('eApiMode').value,
+      codeEnabled:document.getElementById('eCodeEnabled')?.checked||false,
+      s3Bucket:document.getElementById('eS3Bucket')?.value.trim()||'',
+      s3Prefix:document.getElementById('eS3Prefix')?.value.trim()||'dags/',
+      localDagsPath:document.getElementById('eLocalDagsPath')?.value.trim()||'',
+      remoteHost:document.getElementById('eRemoteHost')?.value.trim()||'',
+      remoteUser:document.getElementById('eRemoteUser')?.value.trim()||'',
+      remoteDagsPath:document.getElementById('eRemoteDagsPath')?.value.trim()||'',
+      remoteKeyPath:document.getElementById('eRemoteKeyPath')?.value.trim()||'',
+      localWorkspacePath:document.getElementById('eLocalWorkspacePath')?.value.trim()||''}
   });
   document.getElementById('editMode').style.display='none';
   document.getElementById('viewMode').style.display='block';
 });
 
 document.getElementById('btnDelete').addEventListener('click',function(){
-  if(confirm('Delete server "'+server.name+'"? This cannot be undone.')){
-    vscode.postMessage({command:'deleteServer'});
-  }
+  vscode.postMessage({command:'deleteServer'});
 });
 })();
 </script>
@@ -500,4 +542,91 @@ function errHtml(msg: string): string {
 }
 function loadingHtml(name: string): string {
   return `<!DOCTYPE html><html><body style="padding:20px;font-family:var(--vscode-font-family);color:var(--vscode-foreground)"><h2>${esc(name)}</h2><p>Loading...</p></body></html>`;
+}
+
+export function buildCodeConfig(data: any): import('../models').CodeConfig | undefined {
+  if (!data.codeEnabled) return undefined;
+  const cfg: import('../models').CodeConfig = {};
+  if (data.s3Bucket) { cfg.s3Bucket = data.s3Bucket; cfg.s3Prefix = data.s3Prefix || 'dags/'; }
+  if (data.localDagsPath) cfg.localDagsPath = data.localDagsPath;
+  if (data.remoteHost) {
+    cfg.remoteHost = data.remoteHost;
+    cfg.remoteUser = data.remoteUser;
+    cfg.remoteDagsPath = data.remoteDagsPath;
+    cfg.remoteKeyPath = data.remoteKeyPath || undefined;
+  }
+  if (data.localWorkspacePath) cfg.localWorkspacePath = data.localWorkspacePath;
+  return cfg;
+}
+
+function codeConfigSection(prefix: string, serverType: string, cfg?: import('../models').CodeConfig): string {
+  const enabled = !!cfg;
+  const isMwaa = serverType === 'mwaa';
+  return `
+<div class="card" style="margin-top:16px">
+  <h2>&#x1F4DD; Code Management <span style="font-weight:normal;font-size:12px;color:var(--vscode-descriptionForeground)">(Optional)</span></h2>
+  <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+    <input type="checkbox" id="${prefix}CodeEnabled" ${enabled ? 'checked' : ''} style="width:auto">
+    Enable DAG code management
+  </label>
+  <div id="${prefix}CodeFields" style="display:${enabled ? 'block' : 'none'};margin-top:12px">
+    ${isMwaa ? `
+    <label>S3 Bucket</label>
+    <input id="${prefix}S3Bucket" type="text" placeholder="my-mwaa-bucket" value="${esc(cfg?.s3Bucket ?? '')}">
+    <label>S3 Prefix (DAGs folder)</label>
+    <input id="${prefix}S3Prefix" type="text" placeholder="dags/" value="${esc(cfg?.s3Prefix ?? 'dags/')}">
+    ` : `
+    <label>DAGs Location</label>
+    <select id="${prefix}DagsLocationType">
+      <option value="local" ${!cfg?.remoteHost ? 'selected' : ''}>Local machine</option>
+      <option value="remote" ${cfg?.remoteHost ? 'selected' : ''}>Remote machine (SSH/rsync)</option>
+    </select>
+    <div id="${prefix}LocalFields" style="display:${!cfg?.remoteHost ? 'block' : 'none'}">
+      <label>Local DAGs Path</label>
+      <input id="${prefix}LocalDagsPath" type="text" placeholder="/usr/local/airflow/dags" value="${esc(cfg?.localDagsPath ?? '')}">
+    </div>
+    <div id="${prefix}RemoteFields" style="display:${cfg?.remoteHost ? 'block' : 'none'}">
+      <label>Remote Host</label>
+      <input id="${prefix}RemoteHost" type="text" placeholder="airflow.example.com" value="${esc(cfg?.remoteHost ?? '')}">
+      <label>Remote User</label>
+      <input id="${prefix}RemoteUser" type="text" placeholder="ubuntu" value="${esc(cfg?.remoteUser ?? '')}">
+      <label>Remote DAGs Path</label>
+      <input id="${prefix}RemoteDagsPath" type="text" placeholder="/opt/airflow/dags" value="${esc(cfg?.remoteDagsPath ?? '')}">
+      <label>SSH Key Path (optional)</label>
+      <input id="${prefix}RemoteKeyPath" type="text" placeholder="~/.ssh/id_rsa" value="${esc(cfg?.remoteKeyPath ?? '')}">
+    </div>
+    `}
+    <label>Local Workspace Path (optional)</label>
+    <input id="${prefix}LocalWorkspacePath" type="text" placeholder="~/.airflow-studio/workspaces/..." value="${esc(cfg?.localWorkspacePath ?? '')}">
+    <div class="help-text">&#x1F4A1; Files synced here for editing. Leave empty to use default (~/.airflow-studio/workspaces/&lt;server-id&gt;).</div>
+  </div>
+</div>
+<script>
+(function(){
+  var cb = document.getElementById('${prefix}CodeEnabled');
+  if(cb) cb.addEventListener('change', function(){
+    document.getElementById('${prefix}CodeFields').style.display = this.checked ? 'block' : 'none';
+  });
+  var loc = document.getElementById('${prefix}DagsLocationType');
+  if(loc) loc.addEventListener('change', function(){
+    document.getElementById('${prefix}LocalFields').style.display = this.value==='local'?'block':'none';
+    document.getElementById('${prefix}RemoteFields').style.display = this.value==='remote'?'block':'none';
+  });
+})();
+</script>
+`;
+}
+
+function collectCodeFields(prefix: string): string {
+  return `
+    codeEnabled: document.getElementById('${prefix}CodeEnabled')?.checked || false,
+    s3Bucket: document.getElementById('${prefix}S3Bucket')?.value.trim() || '',
+    s3Prefix: document.getElementById('${prefix}S3Prefix')?.value.trim() || 'dags/',
+    localDagsPath: document.getElementById('${prefix}LocalDagsPath')?.value.trim() || '',
+    remoteHost: document.getElementById('${prefix}RemoteHost')?.value.trim() || '',
+    remoteUser: document.getElementById('${prefix}RemoteUser')?.value.trim() || '',
+    remoteDagsPath: document.getElementById('${prefix}RemoteDagsPath')?.value.trim() || '',
+    remoteKeyPath: document.getElementById('${prefix}RemoteKeyPath')?.value.trim() || '',
+    localWorkspacePath: document.getElementById('${prefix}LocalWorkspacePath')?.value.trim() || '',
+  `;
 }
