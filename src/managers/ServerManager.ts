@@ -185,6 +185,7 @@ export class ServerManager {
     const filtered = servers.filter(s => s.id !== serverId);
     await this.context.globalState.update('airflow.servers', filtered);
     await this.context.secrets.delete(`airflow.password.${serverId}`);
+    await this.context.secrets.delete(`airflow.code.password.${serverId}`);
     
     // Clear cached client
     this.clientCache.delete(serverId);
@@ -193,6 +194,15 @@ export class ServerManager {
       this.activeServerId = undefined;
       await this.context.globalState.update('airflow.activeServerId', undefined);
     }
+  }
+
+  async storeCodePassword(serverId: string, password: string): Promise<void> {
+    await this.context.secrets.store(`airflow.code.password.${serverId}`, password);
+    Logger.debug('ServerManager.storeCodePassword: Stored SSH password', { serverId });
+  }
+
+  async getCodePassword(serverId: string): Promise<string | undefined> {
+    return await this.context.secrets.get(`airflow.code.password.${serverId}`);
   }
 
   async getClient(serverId?: string): Promise<IAirflowClient | undefined> {

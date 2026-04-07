@@ -55,4 +55,6 @@ export interface ClearTaskOptions {
   includeDownstream?: boolean;
   includeFuture?: boolean;
   onlyFailed?: boolean;
+  onlyRunning?: boolean;
+  resetDagRuns?: boolean;
 }

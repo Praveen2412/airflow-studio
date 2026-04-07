@@ -4,7 +4,7 @@
 
 Airflow Studio is a comprehensive VS Code extension that brings the power of Apache Airflow management into your IDE. Connect to self-hosted Airflow instances or AWS MWAA environments, manage DAGs, monitor task execution, and configure admin resources—all without leaving your development environment.
 
-![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)
+![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
 ---
@@ -26,12 +26,30 @@ Airflow Studio is a comprehensive VS Code extension that brings the power of Apa
 - **Source Code Viewer**: View DAG Python source code directly in VS Code
 - **Favorites System**: Mark favorite DAGs with ❤️ for quick access and filtering
 
+### 📁 Code Management (v0.2)
+- **Browse Files**: View DAG files directly in VS Code tree view
+- **Pull/Push**: Sync files between source and local workspace
+- **File Operations**: Create, rename, delete, upload, download files
+- **MWAA S3 Sync**: Automatic sync with S3 buckets via AWS CLI
+- **Local Sync**: Direct file copy for local Airflow instances
+- **Remote SSH Sync**: rsync/scp over SSH with port and password support
+- **Workspace Management**: Configurable local workspace path
+
 ### 🔧 Task Operations
 - **Task Instances**: View all tasks for any DAG run with state visualization
-- **Clear Tasks**: Re-run failed or completed tasks with upstream/downstream options
+- **Clear Tasks**: Re-run tasks with comprehensive options:
+  - Only clear failed tasks
+  - Include upstream/downstream tasks
+  - Include future task instances
+  - Only clear running tasks
+  - Reset DAG runs to RUNNING state
 - **Change State**: Manually set task states (success, failed, skipped)
 - **Multi-Try Logs**: View logs from different retry attempts
 - **Real-Time Logs**: Stream logs for running tasks with auto-refresh
+  - Automatic detection of running/queued tasks
+  - Configurable refresh interval (default: 5 seconds)
+  - Manual toggle control
+  - Automatic cleanup on navigation
 - **Rendered Templates**: View rendered Jinja2 templates for task parameters (Airflow 3.x)
 
 ### ⚙️ Admin Tools
@@ -65,7 +83,7 @@ Airflow Studio is a comprehensive VS Code extension that brings the power of Apa
 
 2. **From VSIX File**
    ```bash
-   code --install-extension airflow-studio-0.1.0.vsix
+   code --install-extension airflow-studio-0.2.0.vsix
    ```
 
 ### Prerequisites
@@ -92,12 +110,16 @@ Airflow Studio is a comprehensive VS Code extension that brings the power of Apa
    - **Username**: Airflow web UI username
    - **Password**: Airflow web UI password
    - **API Mode**: Auto-detect (recommended) or manually select v1/v2
+   - **Code Management** (Optional):
+     - **Local**: Specify local DAGs path
+     - **Remote SSH**: Configure host, port (default: 22), user, path, SSH key, and optional password
 
    **For AWS MWAA:**
    - **Name**: Friendly name (e.g., "MWAA Production")
    - **Environment Name**: MWAA environment name from AWS Console
    - **AWS Region**: Region where MWAA is deployed (e.g., `us-east-1`)
    - **API Mode**: Auto-detect (recommended)
+   - **Code Management** (Optional): Configure S3 bucket and prefix for DAG files
 
 4. **Start Managing**
    - Expand your server in the tree view
@@ -155,9 +177,18 @@ Airflow Studio is a comprehensive VS Code extension that brings the power of Apa
 
 **View Task Logs**: Click on task instance → "View Logs"
 
+**Auto-Refresh Logs**: For running/queued tasks, logs automatically refresh
+- Toggle auto-refresh on/off with checkbox in log viewer
+- Configure refresh interval in Settings (default: 5 seconds)
+- Automatic cleanup when navigating away
+
 **Change Log Try**: Use dropdown to view logs from different retry attempts
 
-**Clear Tasks**: Right-click task → "Clear Task" to re-run
+**Clear Tasks**: Click "Clear Task" button to show options dialog:
+- Select which tasks to clear (failed, running, all)
+- Include upstream/downstream dependencies
+- Include future task instances
+- Reset DAG run state
 
 **Change Task State**: Right-click task → "Set State" → Select new state
 
@@ -209,6 +240,31 @@ Airflow Studio is a comprehensive VS Code extension that brings the power of Apa
 
 **Health Check**: Click Admin → Health Check to monitor system components
 
+### Working with Code Files (v0.2)
+
+**Browse Files**: Expand "Code" section under server to view DAG files
+
+**Pull from Source**: Right-click Code → "Pull from Source" to sync files to workspace
+
+**Push to Source**: Right-click Code → "Push to Source" to upload local changes
+
+**Open File**: Click on any file to open in VS Code editor
+
+**Create New File**: Right-click Code or folder → "New File"
+
+**Rename File**: Right-click file → "Rename" (workspace only, push to sync)
+
+**Delete File**: Right-click file → "Delete" with options:
+- Delete from both workspace and source
+- Delete from workspace only
+- Delete from source only
+
+**Upload File**: Right-click file → "Push to Source" to upload individual file
+
+**Download File**: Right-click file → "Pull from Source" to download individual file
+
+**Configure Code Settings**: Right-click server → "Configure Code Settings"
+
 ---
 
 ## 🎮 Commands
@@ -246,6 +302,18 @@ Access all commands via Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`):
 - `Airflow Studio: Open Providers` - View provider packages
 - `Airflow Studio: Open Health Check` - Monitor system health
 
+### Code Management Commands (v0.2)
+- `Airflow Studio: Configure Code Settings` - Set up code sync for server
+- `Airflow Studio: Pull from Source` - Download files from source
+- `Airflow Studio: Push to Source` - Upload files to source
+- `Airflow Studio: Sync from Source` - Pull with delete (full sync)
+- `Airflow Studio: Open File` - Open DAG file in editor
+- `Airflow Studio: New File` - Create new file
+- `Airflow Studio: Rename File` - Rename file in workspace
+- `Airflow Studio: Delete File` - Delete file with options
+- `Airflow Studio: Upload File` - Push individual file to source
+- `Airflow Studio: Download File` - Pull individual file from source
+
 ---
 
 ## ⚙️ Configuration
@@ -258,6 +326,12 @@ Access via `File` → `Preferences` → `Settings` → Search "Airflow Studio"
 - Enable debug-level logging in Output panel
 - Useful for troubleshooting connection or API issues
 - When enabled, logs all HTTP requests and responses
+
+**`airflowStudio.logStreamInterval`** (number, default: `5000`)
+- Auto-refresh interval for streaming task logs in milliseconds
+- Controls how frequently logs are refreshed for running/queued tasks
+- Set to higher values (e.g., 10000) for less frequent updates
+- Set to lower values (e.g., 2000) for more real-time updates
 
 ### Stored Data
 
@@ -340,6 +414,24 @@ Access via `File` → `Preferences` → `Settings` → Search "Airflow Studio"
 - Reduce DAG run limit in details panel (use 25 instead of 365)
 - Disable verbose logging if enabled
 
+### Code Management Issues (v0.2)
+
+**Problem**: "Failed to pull from S3"
+- Verify AWS CLI is installed (`aws --version`)
+- Check AWS credentials are configured
+- Ensure S3 bucket and prefix are correct
+- Verify IAM permissions for S3 access
+
+**Problem**: "SSH connection failed"
+- Verify remote host is reachable
+- Check SSH port (default: 22)
+- Ensure SSH key path is correct or password is provided
+- Test SSH connection manually: `ssh -p <port> user@host`
+
+**Problem**: "rsync command not found"
+- Install rsync on your system
+- For remote sync, rsync must be installed on both local and remote machines
+
 ### Getting Help
 
 1. **Check Logs**: `View` → `Output` → Select "Airflow Studio"
@@ -353,7 +445,32 @@ Access via `File` → `Preferences` → `Settings` → Search "Airflow Studio"
 
 See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
 
-### v0.1.0 (Current Release)
+### v0.2.0 (Current Release)
+
+#### 🎉 Major Features
+- **Code Management**: Browse, edit, sync DAG files directly in VS Code
+- **Clear Task Options**: Comprehensive dialog with upstream/downstream/failed/running options
+- **SSH Enhancements**: Port and password support for remote connections
+- **Immediate UI Updates**: Code config type changes reflect instantly
+
+#### 🔧 Code Management
+- Browse DAG files in tree view (all file types)
+- Pull/push files from/to source (S3, local, SSH)
+- Create, rename, delete files
+- Upload/download individual files
+- MWAA S3 sync via AWS CLI
+- Self-hosted local file copy
+- Self-hosted remote rsync/scp over SSH
+- Configurable workspace path
+
+#### ✅ Improvements
+- Clear task dialog with 6 configurable options
+- SSH port configuration (default: 22)
+- SSH password stored securely in VS Code secrets
+- Rename file only affects workspace (manual push to sync)
+- Better validation and error handling
+
+### v0.1.0
 
 #### 🎉 Major Features
 - **Unified Tree View**: Hierarchical structure with servers containing DAGs and Admin sections

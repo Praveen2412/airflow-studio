@@ -30,11 +30,21 @@ export class ServerDetailsPanel {
     this.update();
   }
 
-  static show(serverId: string, serverManager: ServerManager, extensionUri: vscode.Uri) {
+  static show(serverId: string, serverManager: ServerManager, extensionUri: vscode.Uri, autoEdit: boolean = false) {
     const existing = ServerDetailsPanel.panels.get(serverId);
-    if (existing) { existing.panel.reveal(); existing.update(); return; }
+    if (existing) { 
+      existing.panel.reveal(); 
+      existing.update();
+      if (autoEdit) {
+        setTimeout(() => existing.panel.webview.postMessage({ command: 'showEditMode' }), 500);
+      }
+      return; 
+    }
     const p = new ServerDetailsPanel(serverId, serverManager, extensionUri);
     ServerDetailsPanel.panels.set(serverId, p);
+    if (autoEdit) {
+      setTimeout(() => p.panel.webview.postMessage({ command: 'showEditMode' }), 500);
+    }
   }
 
   static showNew(serverManager: ServerManager, extensionUri: vscode.Uri) {
@@ -62,6 +72,13 @@ export class ServerDetailsPanel {
         case 'addServer':
           await this.addServer(msg.data);
           break;
+        case 'saveCodeConfig':
+          await this.saveCodeConfig(msg.data);
+          break;
+        case 'triggerEdit':
+          // Trigger edit mode from extension
+          this.panel.webview.postMessage({ command: 'showEditMode' });
+          break;
       }
     } catch (error: any) {
       Logger.error('ServerDetailsPanel.handleMessage: Failed', error);
@@ -74,6 +91,10 @@ export class ServerDetailsPanel {
     const server = servers.find(s => s.id === this.serverId);
     if (!server) return;
 
+    const oldCodeConfig = server.codeConfig;
+    const newCodeConfig = data.codeEnabled ? buildCodeConfig(data) : undefined;
+    const codeConfigChanged = JSON.stringify(oldCodeConfig) !== JSON.stringify(newCodeConfig);
+
     const updated: ServerProfile = {
       ...server,
       name: data.name,
@@ -81,11 +102,39 @@ export class ServerDetailsPanel {
       awsRegion: data.awsRegion || undefined,
       awsProfile: data.awsProfile || undefined,
       username: data.username || undefined,
-      apiMode: data.apiMode as any
+      apiMode: data.apiMode as any,
+      codeConfig: newCodeConfig
     };
 
     await this.serverManager.updateServer(updated, data.password || undefined);
+    
+    // Store SSH password in secrets if provided
+    if (data.codeEnabled && data.remotePassword) {
+      await this.serverManager.storeCodePassword(this.serverId, data.remotePassword);
+    } else if (!data.codeEnabled || !data.remoteHost) {
+      // Clear SSH password if code management disabled or switched to non-SSH
+      await this.serverManager.storeCodePassword(this.serverId, '');
+    }
+    
     vscode.window.showInformationMessage(`Server "${data.name}" updated`);
+    await vscode.commands.executeCommand('airflow.refreshServers');
+    
+    // Auto-pull if code config changed and is enabled
+    if (codeConfigChanged && newCodeConfig) {
+      try {
+        const { CodeSyncManager } = await import('../managers/CodeSyncManager');
+        await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: 'Pulling files from source...' },
+          async () => {
+            const result = await CodeSyncManager.getInstance().pull(updated);
+            vscode.window.showInformationMessage(`✓ ${result.message}`);
+          }
+        );
+      } catch (error: any) {
+        vscode.window.showWarningMessage(`Code settings updated but pull failed: ${error.message}`);
+      }
+    }
+    
     this.update();
   }
 
@@ -94,10 +143,46 @@ export class ServerDetailsPanel {
     const server = servers.find(s => s.id === this.serverId);
     if (!server) return;
 
+    const confirm = await vscode.window.showWarningMessage(
+      `Delete server "${server.name}"? This cannot be undone.`,
+      { modal: true },
+      'Delete'
+    );
+    if (confirm !== 'Delete') return;
+
     await this.serverManager.deleteServer(this.serverId);
     vscode.window.showInformationMessage(`Server "${server.name}" deleted`);
     vscode.commands.executeCommand('airflow.refreshServers');
     this.panel.dispose();
+  }
+
+  private async saveCodeConfig(data: any) {
+    const servers = await this.serverManager.getServers();
+    const server = servers.find(s => s.id === this.serverId);
+    if (!server) return;
+
+    server.codeConfig = buildCodeConfig(data);
+    await this.serverManager.updateServer(server);
+    vscode.window.showInformationMessage('Code settings saved');
+    await vscode.commands.executeCommand('airflow.refreshServers');
+    
+    // Auto-pull from source if code config is enabled
+    if (server.codeConfig) {
+      try {
+        const { CodeSyncManager } = await import('../managers/CodeSyncManager');
+        await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: 'Pulling files from source...' },
+          async () => {
+            const result = await CodeSyncManager.getInstance().pull(server);
+            vscode.window.showInformationMessage(`✓ ${result.message}`);
+          }
+        );
+      } catch (error: any) {
+        vscode.window.showWarningMessage(`Code settings saved but pull failed: ${error.message}`);
+      }
+    }
+    
+    this.update();
   }
 
   private async addServer(data: any) {
@@ -112,14 +197,37 @@ export class ServerDetailsPanel {
       username: data.username || undefined,
       apiMode: data.apiMode || 'auto',
       defaultRefreshInterval: 15,
-      lastHealthStatus: 'unknown'
+      lastHealthStatus: 'unknown',
+      codeConfig: data.codeEnabled ? buildCodeConfig(data) : undefined
     };
 
     await this.serverManager.addServer(profile, data.password || undefined);
+    
+    // Store SSH password in secrets if provided
+    if (data.codeEnabled && data.remotePassword) {
+      await this.serverManager.storeCodePassword(profile.id, data.remotePassword);
+    }
+    
     vscode.window.showInformationMessage(`Server "${data.name}" added`);
     
     // Trigger full refresh of servers tree and status bar
     await vscode.commands.executeCommand('airflow.refreshServers');
+    
+    // Auto-pull from source if code config is enabled
+    if (profile.codeConfig) {
+      try {
+        const { CodeSyncManager } = await import('../managers/CodeSyncManager');
+        await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: 'Pulling files from source...' },
+          async () => {
+            const result = await CodeSyncManager.getInstance().pull(profile);
+            vscode.window.showInformationMessage(`✓ ${result.message}`);
+          }
+        );
+      } catch (error: any) {
+        vscode.window.showWarningMessage(`Server added but pull failed: ${error.message}`);
+      }
+    }
     
     // Switch to the new server's details
     this.serverId = profile.id;
@@ -199,18 +307,69 @@ ${STYLES}
     <option value="stable-v1">Airflow 2.x (API v1)</option>
     <option value="stable-v2">Airflow 3.x (API v2)</option>
   </select>
-  <div class="form-actions">
-    <button id="btnAdd">&#x2795; Add Server</button>
-    <button class="secondary" id="btnCancel">Cancel</button>
-  </div>
+</div>
+<div id="fCodeConfigSection"></div>
+<div class="form-actions" style="margin-top:16px">
+  <button id="btnAdd">&#x2795; Add Server</button>
+  <button class="secondary" id="btnCancel">Cancel</button>
 </div>
 <script>
 (function(){
 const vscode=acquireVsCodeApi();
+let currentType='self-hosted';
+function renderCodeConfig(type){
+  currentType=type;
+  const container=document.getElementById('fCodeConfigSection');
+  if(!container) return;
+  container.innerHTML='';
+  const card=document.createElement('div');
+  card.className='card';
+  card.style.marginTop='16px';
+  card.innerHTML='<h2>&#x1F4DD; Code Management <span style="font-weight:normal;font-size:12px;color:var(--vscode-descriptionForeground)">(Optional)</span></h2>';
+  const lbl=document.createElement('label');
+  lbl.style.cssText='display:flex;align-items:center;gap:8px;cursor:pointer';
+  const cb=document.createElement('input');
+  cb.type='checkbox';
+  cb.id='fCodeEnabled';
+  cb.style.width='auto';
+  lbl.appendChild(cb);
+  lbl.appendChild(document.createTextNode('Enable DAG code management'));
+  card.appendChild(lbl);
+  const fields=document.createElement('div');
+  fields.id='fCodeFields';
+  fields.style.cssText='display:none;margin-top:12px';
+  if(type==='mwaa'){
+    fields.innerHTML='<label>S3 Bucket</label><input id="fS3Bucket" type="text" placeholder="my-mwaa-bucket"><label>S3 Prefix (DAGs folder)</label><input id="fS3Prefix" type="text" placeholder="dags/" value="dags/"><label>Local Workspace Path (optional)</label><input id="fLocalWorkspacePath" type="text" placeholder="~/.airflow-studio/workspaces/..."><div class="help-text">&#x1F4A1; Files synced here for editing. Leave empty to use default (~/.airflow-studio/workspaces/&lt;server-id&gt;).</div>';
+  }else{
+    fields.innerHTML='<label>DAGs Location</label><select id="fDagsLocationType"><option value="local" selected>Local machine</option><option value="remote">Remote machine (SSH/rsync)</option></select><div id="fLocalFields" style="display:block"><label>Local DAGs Path</label><input id="fLocalDagsPath" type="text" placeholder="/usr/local/airflow/dags"></div><div id="fRemoteFields" style="display:none"><label>Remote Host</label><input id="fRemoteHost" type="text" placeholder="airflow.example.com"><label>Remote Port</label><input id="fRemotePort" type="number" placeholder="22" value="22"><label>Remote User</label><input id="fRemoteUser" type="text" placeholder="ubuntu"><label>Remote DAGs Path</label><input id="fRemoteDagsPath" type="text" placeholder="/opt/airflow/dags"><label>SSH Key Path (optional)</label><input id="fRemoteKeyPath" type="text" placeholder="~/.ssh/id_rsa"><label>SSH Password (optional, leave empty to use key)</label><input id="fRemotePassword" type="password" placeholder="••••••••"><div class="help-text">⚠️ Use SSH key authentication when possible. Password is stored securely but key-based auth is more secure.</div></div><label>Local Workspace Path (optional)</label><input id="fLocalWorkspacePath" type="text" placeholder="~/.airflow-studio/workspaces/..."><div class="help-text">&#x1F4A1; Files synced here for editing. Leave empty to use default (~/.airflow-studio/workspaces/&lt;server-id&gt;).</div>';
+  }
+  card.appendChild(fields);
+  container.appendChild(card);
+  cb.addEventListener('change',function(){
+    fields.style.display=this.checked?'block':'none';
+  });
+  if(type!=='mwaa'){
+    setTimeout(function(){
+      const loc=document.getElementById('fDagsLocationType');
+      if(loc){
+        loc.addEventListener('change',function(){
+          const localFields=document.getElementById('fLocalFields');
+          const remoteFields=document.getElementById('fRemoteFields');
+          if(localFields && remoteFields){
+            localFields.style.display=this.value==='local'?'block':'none';
+            remoteFields.style.display=this.value==='remote'?'block':'none';
+          }
+        });
+      }
+    },0);
+  }
+}
+renderCodeConfig('self-hosted');
 document.getElementById('fType').addEventListener('change',function(){
   const isMwaa=this.value==='mwaa';
   document.getElementById('selfHostedFields').style.display=isMwaa?'none':'block';
   document.getElementById('mwaaFields').style.display=isMwaa?'block':'none';
+  renderCodeConfig(this.value);
 });
 document.getElementById('btnAdd').addEventListener('click',function(){
   const name=document.getElementById('fName').value.trim();
@@ -234,7 +393,18 @@ document.getElementById('btnAdd').addEventListener('click',function(){
   }
   vscode.postMessage({
     command:'addServer',
-    data:{name,type,baseUrl,awsRegion,awsProfile,username,password,apiMode:document.getElementById('fApiMode').value}
+    data:{name,type,baseUrl,awsRegion,awsProfile,username,password,apiMode:document.getElementById('fApiMode').value,
+      codeEnabled:document.getElementById('fCodeEnabled')?.checked||false,
+      s3Bucket:document.getElementById('fS3Bucket')?.value.trim()||'',
+      s3Prefix:document.getElementById('fS3Prefix')?.value.trim()||'dags/',
+      localDagsPath:document.getElementById('fLocalDagsPath')?.value.trim()||'',
+      remoteHost:document.getElementById('fRemoteHost')?.value.trim()||'',
+      remotePort:document.getElementById('fRemotePort')?.value.trim()||'',
+      remoteUser:document.getElementById('fRemoteUser')?.value.trim()||'',
+      remoteDagsPath:document.getElementById('fRemoteDagsPath')?.value.trim()||'',
+      remoteKeyPath:document.getElementById('fRemoteKeyPath')?.value.trim()||'',
+      remotePassword:document.getElementById('fRemotePassword')?.value||'',
+      localWorkspacePath:document.getElementById('fLocalWorkspacePath')?.value.trim()||''}
   });
 });
 document.getElementById('btnCancel').addEventListener('click',function(){
@@ -380,10 +550,11 @@ ${STYLES}
       <option value="stable-v1">Airflow 2.x (API v1)</option>
       <option value="stable-v2">Airflow 3.x (API v2)</option>
     </select>
-    <div class="form-actions">
-      <button id="btnSave">&#x1F4BE; Save Changes</button>
-      <button class="secondary" id="btnCancelEdit">Cancel</button>
-    </div>
+  </div>
+  ${codeConfigSection('e', server.type, server.codeConfig)}
+  <div class="form-actions" style="margin-top:16px">
+    <button id="btnSave">&#x1F4BE; Save Changes</button>
+    <button class="secondary" id="btnCancelEdit">Cancel</button>
   </div>
 </div>
 
@@ -391,6 +562,13 @@ ${STYLES}
 (function(){
 const vscode=acquireVsCodeApi();
 const server=${serverData};
+
+window.addEventListener('message',function(event){
+  const msg=event.data;
+  if(msg.command==='showEditMode'){
+    document.getElementById('btnEdit').click();
+  }
+});
 
 document.getElementById('btnRefresh').addEventListener('click',function(){vscode.postMessage({command:'refresh'});});
 document.getElementById('btnTest').addEventListener('click',function(){vscode.postMessage({command:'testConnection'});});
@@ -440,16 +618,25 @@ document.getElementById('btnSave').addEventListener('click',function(){
   }
   vscode.postMessage({
     command:'editServer',
-    data:{name,baseUrl,awsRegion,awsProfile,username,password,apiMode:document.getElementById('eApiMode').value}
+    data:{name,baseUrl,awsRegion,awsProfile,username,password,apiMode:document.getElementById('eApiMode').value,
+      codeEnabled:document.getElementById('eCodeEnabled')?.checked||false,
+      s3Bucket:document.getElementById('eS3Bucket')?.value.trim()||'',
+      s3Prefix:document.getElementById('eS3Prefix')?.value.trim()||'dags/',
+      localDagsPath:document.getElementById('eLocalDagsPath')?.value.trim()||'',
+      remoteHost:document.getElementById('eRemoteHost')?.value.trim()||'',
+      remotePort:document.getElementById('eRemotePort')?.value.trim()||'',
+      remoteUser:document.getElementById('eRemoteUser')?.value.trim()||'',
+      remoteDagsPath:document.getElementById('eRemoteDagsPath')?.value.trim()||'',
+      remoteKeyPath:document.getElementById('eRemoteKeyPath')?.value.trim()||'',
+      remotePassword:document.getElementById('eRemotePassword')?.value||'',
+      localWorkspacePath:document.getElementById('eLocalWorkspacePath')?.value.trim()||''}
   });
   document.getElementById('editMode').style.display='none';
   document.getElementById('viewMode').style.display='block';
 });
 
 document.getElementById('btnDelete').addEventListener('click',function(){
-  if(confirm('Delete server "'+server.name+'"? This cannot be undone.')){
-    vscode.postMessage({command:'deleteServer'});
-  }
+  vscode.postMessage({command:'deleteServer'});
 });
 })();
 </script>
@@ -500,4 +687,98 @@ function errHtml(msg: string): string {
 }
 function loadingHtml(name: string): string {
   return `<!DOCTYPE html><html><body style="padding:20px;font-family:var(--vscode-font-family);color:var(--vscode-foreground)"><h2>${esc(name)}</h2><p>Loading...</p></body></html>`;
+}
+
+export function buildCodeConfig(data: any): import('../models').CodeConfig | undefined {
+  if (!data.codeEnabled) return undefined;
+  const cfg: import('../models').CodeConfig = {};
+  if (data.s3Bucket) { cfg.s3Bucket = data.s3Bucket; cfg.s3Prefix = data.s3Prefix || 'dags/'; }
+  if (data.localDagsPath) cfg.localDagsPath = data.localDagsPath;
+  if (data.remoteHost) {
+    cfg.remoteHost = data.remoteHost;
+    cfg.remotePort = data.remotePort ? parseInt(data.remotePort, 10) : 22;
+    cfg.remoteUser = data.remoteUser;
+    cfg.remoteDagsPath = data.remoteDagsPath;
+    cfg.remoteKeyPath = data.remoteKeyPath || undefined;
+    // Password is stored separately in secrets, not in config
+  }
+  if (data.localWorkspacePath) cfg.localWorkspacePath = data.localWorkspacePath;
+  return cfg;
+}
+
+function codeConfigSection(prefix: string, serverType: string, cfg?: import('../models').CodeConfig): string {
+  const enabled = !!cfg;
+  const isMwaa = serverType === 'mwaa';
+  return `
+<div class="card" style="margin-top:16px">
+  <h2>&#x1F4DD; Code Management <span style="font-weight:normal;font-size:12px;color:var(--vscode-descriptionForeground)">(Optional)</span></h2>
+  <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+    <input type="checkbox" id="${prefix}CodeEnabled" ${enabled ? 'checked' : ''} style="width:auto">
+    Enable DAG code management
+  </label>
+  <div id="${prefix}CodeFields" style="display:${enabled ? 'block' : 'none'};margin-top:12px">
+    ${isMwaa ? `
+    <label>S3 Bucket</label>
+    <input id="${prefix}S3Bucket" type="text" placeholder="my-mwaa-bucket" value="${esc(cfg?.s3Bucket ?? '')}">
+    <label>S3 Prefix (DAGs folder)</label>
+    <input id="${prefix}S3Prefix" type="text" placeholder="dags/" value="${esc(cfg?.s3Prefix ?? 'dags/')}">
+    ` : `
+    <label>DAGs Location</label>
+    <select id="${prefix}DagsLocationType">
+      <option value="local" ${!cfg?.remoteHost ? 'selected' : ''}>Local machine</option>
+      <option value="remote" ${cfg?.remoteHost ? 'selected' : ''}>Remote machine (SSH/rsync)</option>
+    </select>
+    <div id="${prefix}LocalFields" style="display:${!cfg?.remoteHost ? 'block' : 'none'}">
+      <label>Local DAGs Path</label>
+      <input id="${prefix}LocalDagsPath" type="text" placeholder="/usr/local/airflow/dags" value="${esc(cfg?.localDagsPath ?? '')}">
+    </div>
+    <div id="${prefix}RemoteFields" style="display:${cfg?.remoteHost ? 'block' : 'none'}">
+      <label>Remote Host</label>
+      <input id="${prefix}RemoteHost" type="text" placeholder="airflow.example.com" value="${esc(cfg?.remoteHost ?? '')}">
+      <label>Remote Port</label>
+      <input id="${prefix}RemotePort" type="number" placeholder="22" value="${esc(cfg?.remotePort ?? 22)}">
+      <label>Remote User</label>
+      <input id="${prefix}RemoteUser" type="text" placeholder="ubuntu" value="${esc(cfg?.remoteUser ?? '')}">
+      <label>Remote DAGs Path</label>
+      <input id="${prefix}RemoteDagsPath" type="text" placeholder="/opt/airflow/dags" value="${esc(cfg?.remoteDagsPath ?? '')}">
+      <label>SSH Key Path (optional)</label>
+      <input id="${prefix}RemoteKeyPath" type="text" placeholder="~/.ssh/id_rsa" value="${esc(cfg?.remoteKeyPath ?? '')}">
+      <label>SSH Password (optional, leave empty to keep current or use key)</label>
+      <input id="${prefix}RemotePassword" type="password" placeholder="••••••••">
+      <div class="help-text">⚠️ Use SSH key authentication when possible. Password is stored securely but key-based auth is more secure.</div>
+    </div>
+    `}
+    <label>Local Workspace Path (optional)</label>
+    <input id="${prefix}LocalWorkspacePath" type="text" placeholder="~/.airflow-studio/workspaces/..." value="${esc(cfg?.localWorkspacePath ?? '')}">
+    <div class="help-text">&#x1F4A1; Files synced here for editing. Leave empty to use default (~/.airflow-studio/workspaces/&lt;server-id&gt;).</div>
+  </div>
+</div>
+<script>
+(function(){
+  var cb = document.getElementById('${prefix}CodeEnabled');
+  if(cb) cb.addEventListener('change', function(){
+    document.getElementById('${prefix}CodeFields').style.display = this.checked ? 'block' : 'none';
+  });
+  var loc = document.getElementById('${prefix}DagsLocationType');
+  if(loc) loc.addEventListener('change', function(){
+    document.getElementById('${prefix}LocalFields').style.display = this.value==='local'?'block':'none';
+    document.getElementById('${prefix}RemoteFields').style.display = this.value==='remote'?'block':'none';
+  });
+})();
+</script>
+`;
+}
+
+function collectCodeFields(prefix: string): string {
+  return `
+    codeEnabled: document.getElementById('${prefix}CodeEnabled')?.checked || false,
+    s3Bucket: document.getElementById('${prefix}S3Bucket')?.value.trim() || '',
+    s3Prefix: document.getElementById('${prefix}S3Prefix')?.value.trim() || 'dags/',
+    localDagsPath: document.getElementById('${prefix}LocalDagsPath')?.value.trim() || '',
+    remoteHost: document.getElementById('${prefix}RemoteHost')?.value.trim() || '',
+    remoteUser: document.getElementById('${prefix}RemoteUser')?.value.trim() || '',
+    remoteDagsPath: document.getElementById('${prefix}RemoteDagsPath')?.value.trim() || '',
+    remoteKeyPath: document.getElementById('${prefix}RemoteKeyPath')?.value.trim() || '',
+    localWorkspacePath: document.getElementById('${prefix}LocalWorkspacePath')?.value.trim() || '',
+  `;
 }

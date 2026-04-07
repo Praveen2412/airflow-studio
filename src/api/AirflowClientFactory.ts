@@ -71,25 +71,21 @@ export class AirflowClientFactory {
     // Provide user-friendly error message based on error type
     if (lastError?.name === 'AccessDeniedException') {
       throw new Error(
-        `AWS IAM permission denied. Please ensure:\n` +
-        `1. AWS credentials are configured${awsProfile ? ` for profile '${awsProfile}'` : ''} (run 'aws configure${awsProfile ? ` --profile ${awsProfile}` : ''}')\n` +
-        `2. Your IAM user/role has 'airflow:CreateWebLoginToken' permission\n` +
-        `3. Environment name '${environmentName}' exists in region '${awsRegion}'\n` +
-        `4. MWAA environment is in 'Available' state\n` +
-        `5. If using MFA, ensure your session token is valid`
+        `AWS IAM permission denied. Ensure:\n` +
+        `• AWS credentials configured${awsProfile ? ` for profile '${awsProfile}'` : ''}\n` +
+        `• IAM has 'airflow:CreateWebLoginToken' permission\n` +
+        `• Environment '${environmentName}' exists in '${awsRegion}'\n` +
+        `• MWAA environment is 'Available'`
       );
     }
 
     if (lastError?.name === 'UnrecognizedClientException' || lastError?.name === 'InvalidClientTokenId') {
       throw new Error(
-        `Invalid AWS credentials${awsProfile ? ` for profile '${awsProfile}'` : ''}. Please check:\n` +
-        `1. Profile '${awsProfile || 'default'}' exists in ~/.aws/credentials or ~/.aws/config\n` +
-        `2. Access key and secret key are valid\n` +
-        `3. If using temporary credentials, ensure they haven't expired\n` +
-        `4. If using session tokens, ensure field name is lowercase 'aws_session_token' (not 'AWS_SESSION_TOKEN')\n` +
-        `5. Run 'aws configure${awsProfile ? ` --profile ${awsProfile}` : ''}' to set up credentials\n` +
-        `6. Test with: aws sts get-caller-identity${awsProfile ? ` --profile ${awsProfile}` : ''}\n` +
-        `7. Test MWAA access: aws mwaa create-web-login-token --name ${environmentName} --region ${awsRegion}${awsProfile ? ` --profile ${awsProfile}` : ''}`
+        `Invalid AWS credentials${awsProfile ? ` for profile '${awsProfile}'` : ''}. Check:\n` +
+        `• Profile '${awsProfile || 'default'}' exists in ~/.aws/\n` +
+        `• Access key and secret are valid\n` +
+        `• Session token not expired (if using temporary credentials)\n` +
+        `• Test: aws sts get-caller-identity${awsProfile ? ` --profile ${awsProfile}` : ''}`
       );
     }
 

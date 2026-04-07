@@ -1,9 +1,13 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
+import * as fs from 'fs';
 import { ServerManager } from './managers/ServerManager';
 import { ServersTreeProvider } from './providers/ServersTreeProvider';
 import { ServerDetailsPanel, showAddServerPanel } from './webviews/ServerDetailsPanel';
 import { DagDetailsPanel } from './webviews/DagDetailsPanel';
 import { VariablesPanel, PoolsPanel, ConnectionsPanel, ConfigPanel, PluginsPanel, ProvidersPanel } from './webviews/AdminPanels';
+import { CodeSyncManager } from './managers/CodeSyncManager';
+import { CodeFileItem } from './providers/CodeTreeProvider';
 import { ServerProfile } from './models';
 import { Logger } from './utils/logger';
 import { Constants, registerConfigurationListener } from './utils/constants';
@@ -79,7 +83,18 @@ export function activate(context: vscode.ExtensionContext) {
       { id: 'airflow.openConfigPanel', handler: openConfigPanel },
       { id: 'airflow.openPluginsPanel', handler: openPluginsPanel },
       { id: 'airflow.openProvidersPanel', handler: openProvidersPanel },
-      { id: 'airflow.openHealthCheck', handler: openHealthCheck }
+      { id: 'airflow.openHealthCheck', handler: openHealthCheck },
+      // Code management
+      { id: 'airflow.code.configure', handler: codeConfigureServer },
+      { id: 'airflow.code.pull', handler: codePull },
+      { id: 'airflow.code.sync', handler: codeSync },
+      { id: 'airflow.code.push', handler: codePush },
+      { id: 'airflow.code.openFile', handler: codeOpenFile },
+      { id: 'airflow.code.newFile', handler: codeNewFile },
+      { id: 'airflow.code.deleteFile', handler: codeDeleteFile },
+      { id: 'airflow.code.renameFile', handler: codeRenameFile },
+      { id: 'airflow.code.uploadFile', handler: codeUploadFile },
+      { id: 'airflow.code.downloadFile', handler: codeDownloadFile }
     ];
     
     commands.forEach(cmd => {
@@ -680,6 +695,199 @@ ${health.dagProcessor ? `DAG Processor: ${health.dagProcessor.status}` : ''}
   } catch (error: any) {
     vscode.window.showErrorMessage(`Failed to get health: ${error.message}`);
   }
+}
+
+// ─── Code management handlers ─────────────────────────────────────────────────
+
+async function codeConfigureServer(item: any) {
+  Logger.info('=== USER ACTION: Configure Code Settings ===');
+  const serverId = item?.server?.id;
+  if (!serverId) return;
+  ServerDetailsPanel.show(serverId, serverManager, vscode.Uri.file(__dirname), true);
+}
+
+async function codePull(item: any) {
+  Logger.info('=== USER ACTION: Code Pull ===');
+  const server = await resolveServerFromItem(item);
+  if (!server?.codeConfig) { vscode.window.showErrorMessage('Code management not configured for this server.'); return; }
+
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Pulling files from ${server.type === 'mwaa' ? 'S3' : 'source'}...` },
+    async () => {
+      const result = await CodeSyncManager.getInstance().pullOnly(server);
+      vscode.window.showInformationMessage(`✓ ${result.message}`);
+      serversTreeProvider.refresh();
+    }
+  );
+}
+
+async function codeSync(item: any) {
+  Logger.info('=== USER ACTION: Code Sync ===');
+  const server = await resolveServerFromItem(item);
+  if (!server?.codeConfig) { vscode.window.showErrorMessage('Code management not configured for this server.'); return; }
+
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Syncing files from ${server.type === 'mwaa' ? 'S3' : 'source'}...` },
+    async () => {
+      const result = await CodeSyncManager.getInstance().pull(server);
+      vscode.window.showInformationMessage(`✓ ${result.message}`);
+      serversTreeProvider.refresh();
+    }
+  );
+}
+
+async function codePush(item: any) {
+  Logger.info('=== USER ACTION: Code Push ===');
+  const server = await resolveServerFromItem(item);
+  if (!server?.codeConfig) { vscode.window.showErrorMessage('Code management not configured for this server.'); return; }
+
+  const confirm = await vscode.window.showWarningMessage(
+    `Push local changes to ${server.type === 'mwaa' ? 'S3' : 'source'}? This will overwrite remote files.`,
+    { modal: true }, 'Push'
+  );
+  if (confirm !== 'Push') return;
+
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Pushing files to ${server.type === 'mwaa' ? 'S3' : 'source'}...` },
+    async () => {
+      const result = await CodeSyncManager.getInstance().push(server);
+      vscode.window.showInformationMessage(`✓ ${result.message}`);
+    }
+  );
+}
+
+async function codeOpenFile(item: CodeFileItem) {
+  Logger.info('=== USER ACTION: Code Open File ===', { filePath: item?.filePath });
+  if (!item?.filePath) return;
+  const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(item.filePath));
+  await vscode.window.showTextDocument(doc, { preview: false });
+}
+
+async function codeNewFile(item: any) {
+  Logger.info('=== USER ACTION: Code New File ===');
+  const server = await resolveServerFromItem(item);
+  if (!server?.codeConfig) { vscode.window.showErrorMessage('Code management not configured for this server.'); return; }
+
+  const fileName = await vscode.window.showInputBox({
+    prompt: 'New file name',
+    placeHolder: 'my_dag.py',
+    validateInput: v => v?.trim() ? null : 'File name is required'
+  });
+  if (!fileName) return;
+
+  const syncManager = CodeSyncManager.getInstance();
+  const localBase = syncManager.getLocalWorkspacePath(server);
+  // If item is a directory node, create inside it; otherwise use workspace root
+  const dirPath = (item instanceof CodeFileItem && item.isDirectory) ? item.filePath : localBase;
+  const filePath = path.join(dirPath, fileName.trim());
+
+  await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.promises.writeFile(filePath, '', { flag: 'wx' }).catch(async () => {
+    // file exists — just open it
+  });
+
+  const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+  await vscode.window.showTextDocument(doc, { preview: false });
+  serversTreeProvider.refresh();
+}
+
+async function codeDeleteFile(item: CodeFileItem) {
+  Logger.info('=== USER ACTION: Code Delete File ===', { filePath: item?.filePath });
+  if (!item?.filePath) return;
+
+  const choice = await vscode.window.showWarningMessage(
+    `Delete "${item.fileName}"?`,
+    { modal: true },
+    'Delete from Both',
+    'Delete from Workspace Only',
+    'Delete from Source Only'
+  );
+  if (!choice) return;
+
+  try {
+    if (choice === 'Delete from Both') {
+      await CodeSyncManager.getInstance().deleteFile(item.server, item.filePath);
+      vscode.window.showInformationMessage(`✓ Deleted ${item.fileName} from both workspace and source`);
+    } else if (choice === 'Delete from Workspace Only') {
+      await fs.promises.unlink(item.filePath);
+      vscode.window.showInformationMessage(`✓ Deleted ${item.fileName} from workspace`);
+    } else if (choice === 'Delete from Source Only') {
+      if (item.server.type === 'mwaa') {
+        await CodeSyncManager.getInstance().deleteFileFromS3(item.server, item.filePath);
+      } else if (item.server.codeConfig?.remoteHost) {
+        await CodeSyncManager.getInstance().deleteFileFromRemote(item.server, item.filePath);
+      } else {
+        await CodeSyncManager.getInstance().deleteFileFromLocal(item.server, item.filePath);
+      }
+      vscode.window.showInformationMessage(`✓ Deleted ${item.fileName} from source`);
+    }
+    serversTreeProvider.refresh();
+  } catch (error: any) {
+    vscode.window.showErrorMessage(`Failed to delete: ${error.message}`);
+  }
+}
+
+async function codeUploadFile(item: CodeFileItem) {
+  Logger.info('=== USER ACTION: Code Upload File ===', { filePath: item?.filePath });
+  if (!item?.filePath) return;
+
+  try {
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: `Pushing ${item.fileName} to source...` },
+      async () => {
+        await CodeSyncManager.getInstance().uploadFile(item.server, item.filePath);
+        vscode.window.showInformationMessage(`✓ Pushed ${item.fileName} to source`);
+      }
+    );
+  } catch (error: any) {
+    vscode.window.showErrorMessage(`Failed to push: ${error.message}`);
+  }
+}
+
+async function codeDownloadFile(item: CodeFileItem) {
+  Logger.info('=== USER ACTION: Code Download File ===', { filePath: item?.filePath });
+  if (!item?.filePath) return;
+
+  try {
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: `Pulling ${item.fileName} from source...` },
+      async () => {
+        await CodeSyncManager.getInstance().downloadFile(item.server, item.filePath);
+        vscode.window.showInformationMessage(`✓ Pulled ${item.fileName} from source`);
+      }
+    );
+  } catch (error: any) {
+    vscode.window.showErrorMessage(`Failed to pull: ${error.message}`);
+  }
+}
+
+async function codeRenameFile(item: CodeFileItem) {
+  Logger.info('=== USER ACTION: Code Rename File ===', { filePath: item?.filePath });
+  if (!item?.filePath || item.isDirectory) return;
+
+  const oldName = item.fileName;
+  const newName = await vscode.window.showInputBox({
+    prompt: 'New file name',
+    value: oldName,
+    validateInput: v => v?.trim() && v !== oldName ? null : 'Enter a valid new name'
+  });
+  if (!newName || newName === oldName) return;
+
+  try {
+    const newPath = path.join(path.dirname(item.filePath), newName);
+    await fs.promises.rename(item.filePath, newPath);
+    vscode.window.showInformationMessage(`✓ Renamed ${oldName} to ${newName}`);
+    serversTreeProvider.refresh();
+  } catch (error: any) {
+    vscode.window.showErrorMessage(`Failed to rename: ${error.message}`);
+  }
+}
+
+async function resolveServerFromItem(item: any): Promise<ServerProfile | undefined> {
+  const serverId = item?.server?.id;
+  if (!serverId) return undefined;
+  const servers = await serverManager.getServers();
+  return servers.find(s => s.id === serverId);
 }
 
 export function deactivate() {
