@@ -2,7 +2,7 @@
 
 All notable changes to the "Airflow Studio" extension will be documented in this file.
 
-## [0.2.0] - 2026-06-01
+## [0.2.0] - 2026-04-07
 
 ### Added
 - **Code Management**: New "Code" section under each server in the tree view
@@ -10,22 +10,36 @@ All notable changes to the "Airflow Studio" extension will be documented in this
   - Pull files from source to local workspace
   - Push local changes back to source
   - Upload individual files to source
+  - Download individual files from source
   - Create new files (opens empty file in editor)
-  - Delete files from both local workspace and source
+  - Rename files in workspace
+  - Delete files from workspace, source, or both
 - **MWAA S3 Sync**: Pull/push DAG files via `aws s3 sync` CLI
   - Configure S3 bucket and prefix per server
   - Uses existing AWS profile/region from server config
 - **Self-hosted Local Sync**: Direct file copy from/to local DAGs path
 - **Self-hosted Remote Sync**: rsync/scp over SSH for remote Airflow servers
-  - Configure remote host, user, DAGs path, and optional SSH key
+  - Configure remote host, port, user, DAGs path, and optional SSH key
+  - SSH password support (stored securely in VS Code secrets)
+  - Default SSH port: 22
 - **Code Configuration**: Optional code settings in Add/Edit Server panel
   - MWAA: S3 bucket + prefix
   - Self-hosted local: local DAGs path
-  - Self-hosted remote: SSH host, user, path, key
+  - Self-hosted remote: SSH host, port, user, path, key, password
   - Custom local workspace path override
+  - Immediate UI updates when switching between local/remote/S3
+- **Clear Task Options Dialog**: Enhanced task clearing with full control
+  - Only clear failed tasks (default: checked)
+  - Include upstream tasks
+  - Include downstream tasks
+  - Include future task instances
+  - Only clear running tasks
+  - Reset DAG runs to RUNNING state (default: checked)
+  - Modal dialog with checkboxes for all options
 - If code not configured, tree shows "Configure code settings" prompt
 
-## [0.1.0] - 2026-03-25
+
+## [0.1.0] - 2026-03-15
 
 ### Added
 - Initial release of Airflow Studio
@@ -97,4 +111,3 @@ All notable changes to the "Airflow Studio" extension will be documented in this
 - API client caching (5 minutes)
 - JWT token caching (50 minutes)
 - Verbose logging option
-

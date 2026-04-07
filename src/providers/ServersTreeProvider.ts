@@ -137,8 +137,16 @@ export class ServersTreeProvider implements vscode.TreeDataProvider<TreeItemType
       }
     }
 
-    if (element instanceof CodeFolderItem || (element instanceof CodeFileItem && element.isDirectory)) {
-      return this.codeTreeProvider.getChildren(element as CodeFolderItem | CodeFileItem);
+    if (element instanceof CodeFolderItem) {
+      if (!element.server.codeConfig) {
+        return [new CodeNotConfiguredItem(element.server)];
+      }
+      const localPath = this.codeTreeProvider.syncManager.getLocalWorkspacePath(element.server);
+      return this.codeTreeProvider.listDirPublic(element.server, localPath);
+    }
+
+    if (element instanceof CodeFileItem && element.isDirectory) {
+      return this.codeTreeProvider.listDirPublic(element.server, element.filePath);
     }
 
     if (element instanceof AdminFolderItem) {

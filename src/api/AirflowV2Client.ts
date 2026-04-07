@@ -188,18 +188,18 @@ export class AirflowV2Client implements IAirflowClient {
 
   async clearTaskInstances(dagId: string, dagRunId: string, taskIds: string[], options?: ClearTaskOptions): Promise<void> {
     try {
-      // Airflow v2 API requires dry_run: false to actually clear tasks
       await this.http.post(`/api/v2/dags/${dagId}/clearTaskInstances`, {
         dry_run: false,
-        reset_dag_runs: true,
+        reset_dag_runs: options?.resetDagRuns ?? true,
         dag_run_id: dagRunId,
         task_ids: taskIds,
-        include_upstream: options?.includeUpstream || false,
-        include_downstream: options?.includeDownstream || false,
-        include_future: options?.includeFuture || false,
-        only_failed: options?.onlyFailed || false
+        include_upstream: options?.includeUpstream ?? false,
+        include_downstream: options?.includeDownstream ?? false,
+        include_future: options?.includeFuture ?? false,
+        only_failed: options?.onlyFailed ?? false,
+        only_running: options?.onlyRunning ?? false
       });
-      Logger.info('AirflowV2Client.clearTaskInstances: Success', { dagId, dagRunId, taskIds });
+      Logger.info('AirflowV2Client.clearTaskInstances: Success', { dagId, dagRunId, taskIds, options });
     } catch (error: any) {
       Logger.error('AirflowV2Client.clearTaskInstances: Failed', error, { dagId, dagRunId });
       throw error;

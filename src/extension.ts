@@ -87,11 +87,14 @@ export function activate(context: vscode.ExtensionContext) {
       // Code management
       { id: 'airflow.code.configure', handler: codeConfigureServer },
       { id: 'airflow.code.pull', handler: codePull },
+      { id: 'airflow.code.sync', handler: codeSync },
       { id: 'airflow.code.push', handler: codePush },
       { id: 'airflow.code.openFile', handler: codeOpenFile },
       { id: 'airflow.code.newFile', handler: codeNewFile },
       { id: 'airflow.code.deleteFile', handler: codeDeleteFile },
-      { id: 'airflow.code.uploadFile', handler: codeUploadFile }
+      { id: 'airflow.code.renameFile', handler: codeRenameFile },
+      { id: 'airflow.code.uploadFile', handler: codeUploadFile },
+      { id: 'airflow.code.downloadFile', handler: codeDownloadFile }
     ];
     
     commands.forEach(cmd => {
@@ -700,7 +703,7 @@ async function codeConfigureServer(item: any) {
   Logger.info('=== USER ACTION: Configure Code Settings ===');
   const serverId = item?.server?.id;
   if (!serverId) return;
-  ServerDetailsPanel.show(serverId, serverManager, vscode.Uri.file(__dirname));
+  ServerDetailsPanel.show(serverId, serverManager, vscode.Uri.file(__dirname), true);
 }
 
 async function codePull(item: any) {
@@ -710,6 +713,21 @@ async function codePull(item: any) {
 
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Pulling files from ${server.type === 'mwaa' ? 'S3' : 'source'}...` },
+    async () => {
+      const result = await CodeSyncManager.getInstance().pullOnly(server);
+      vscode.window.showInformationMessage(`✓ ${result.message}`);
+      serversTreeProvider.refresh();
+    }
+  );
+}
+
+async function codeSync(item: any) {
+  Logger.info('=== USER ACTION: Code Sync ===');
+  const server = await resolveServerFromItem(item);
+  if (!server?.codeConfig) { vscode.window.showErrorMessage('Code management not configured for this server.'); return; }
+
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Syncing files from ${server.type === 'mwaa' ? 'S3' : 'source'}...` },
     async () => {
       const result = await CodeSyncManager.getInstance().pull(server);
       vscode.window.showInformationMessage(`✓ ${result.message}`);
@@ -777,15 +795,32 @@ async function codeDeleteFile(item: CodeFileItem) {
   Logger.info('=== USER ACTION: Code Delete File ===', { filePath: item?.filePath });
   if (!item?.filePath) return;
 
-  const confirm = await vscode.window.showWarningMessage(
-    `Delete "${item.fileName}" from source and local workspace?`,
-    { modal: true }, 'Delete'
+  const choice = await vscode.window.showWarningMessage(
+    `Delete "${item.fileName}"?`,
+    { modal: true },
+    'Delete from Both',
+    'Delete from Workspace Only',
+    'Delete from Source Only'
   );
-  if (confirm !== 'Delete') return;
+  if (!choice) return;
 
   try {
-    await CodeSyncManager.getInstance().deleteFile(item.server, item.filePath);
-    vscode.window.showInformationMessage(`✓ Deleted ${item.fileName}`);
+    if (choice === 'Delete from Both') {
+      await CodeSyncManager.getInstance().deleteFile(item.server, item.filePath);
+      vscode.window.showInformationMessage(`✓ Deleted ${item.fileName} from both workspace and source`);
+    } else if (choice === 'Delete from Workspace Only') {
+      await fs.promises.unlink(item.filePath);
+      vscode.window.showInformationMessage(`✓ Deleted ${item.fileName} from workspace`);
+    } else if (choice === 'Delete from Source Only') {
+      if (item.server.type === 'mwaa') {
+        await CodeSyncManager.getInstance().deleteFileFromS3(item.server, item.filePath);
+      } else if (item.server.codeConfig?.remoteHost) {
+        await CodeSyncManager.getInstance().deleteFileFromRemote(item.server, item.filePath);
+      } else {
+        await CodeSyncManager.getInstance().deleteFileFromLocal(item.server, item.filePath);
+      }
+      vscode.window.showInformationMessage(`✓ Deleted ${item.fileName} from source`);
+    }
     serversTreeProvider.refresh();
   } catch (error: any) {
     vscode.window.showErrorMessage(`Failed to delete: ${error.message}`);
@@ -798,14 +833,53 @@ async function codeUploadFile(item: CodeFileItem) {
 
   try {
     await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: `Uploading ${item.fileName}...` },
+      { location: vscode.ProgressLocation.Notification, title: `Pushing ${item.fileName} to source...` },
       async () => {
         await CodeSyncManager.getInstance().uploadFile(item.server, item.filePath);
-        vscode.window.showInformationMessage(`✓ Uploaded ${item.fileName}`);
+        vscode.window.showInformationMessage(`✓ Pushed ${item.fileName} to source`);
       }
     );
   } catch (error: any) {
-    vscode.window.showErrorMessage(`Failed to upload: ${error.message}`);
+    vscode.window.showErrorMessage(`Failed to push: ${error.message}`);
+  }
+}
+
+async function codeDownloadFile(item: CodeFileItem) {
+  Logger.info('=== USER ACTION: Code Download File ===', { filePath: item?.filePath });
+  if (!item?.filePath) return;
+
+  try {
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: `Pulling ${item.fileName} from source...` },
+      async () => {
+        await CodeSyncManager.getInstance().downloadFile(item.server, item.filePath);
+        vscode.window.showInformationMessage(`✓ Pulled ${item.fileName} from source`);
+      }
+    );
+  } catch (error: any) {
+    vscode.window.showErrorMessage(`Failed to pull: ${error.message}`);
+  }
+}
+
+async function codeRenameFile(item: CodeFileItem) {
+  Logger.info('=== USER ACTION: Code Rename File ===', { filePath: item?.filePath });
+  if (!item?.filePath || item.isDirectory) return;
+
+  const oldName = item.fileName;
+  const newName = await vscode.window.showInputBox({
+    prompt: 'New file name',
+    value: oldName,
+    validateInput: v => v?.trim() && v !== oldName ? null : 'Enter a valid new name'
+  });
+  if (!newName || newName === oldName) return;
+
+  try {
+    const newPath = path.join(path.dirname(item.filePath), newName);
+    await fs.promises.rename(item.filePath, newPath);
+    vscode.window.showInformationMessage(`✓ Renamed ${oldName} to ${newName}`);
+    serversTreeProvider.refresh();
+  } catch (error: any) {
+    vscode.window.showErrorMessage(`Failed to rename: ${error.message}`);
   }
 }
 

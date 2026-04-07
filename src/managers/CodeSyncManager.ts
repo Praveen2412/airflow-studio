@@ -49,14 +49,15 @@ export class CodeSyncManager {
 
   // ─── MWAA / S3 ────────────────────────────────────────────────────────────
 
-  async pullFromS3(server: ServerProfile): Promise<SyncResult> {
+  async pullFromS3(server: ServerProfile, deleteLocal: boolean = true): Promise<SyncResult> {
     const cfg = server.codeConfig!;
     const localPath = await this.ensureLocalWorkspace(server);
     const s3Uri = `s3://${cfg.s3Bucket}/${cfg.s3Prefix ?? ''}`;
 
-    Logger.info('CodeSyncManager.pullFromS3: Starting', { s3Uri, localPath });
+    Logger.info('CodeSyncManager.pullFromS3: Starting', { s3Uri, localPath, deleteLocal });
 
-    const args = ['s3', 'sync', s3Uri, localPath, '--delete'];
+    const args = ['s3', 'sync', s3Uri, localPath];
+    if (deleteLocal) args.push('--delete');
     if (server.awsProfile) args.push('--profile', server.awsProfile);
     if (server.awsRegion) args.push('--region', server.awsRegion);
 
@@ -131,6 +132,32 @@ export class CodeSyncManager {
     }
   }
 
+  async deleteFileFromLocal(server: ServerProfile, localFilePath: string): Promise<void> {
+    const cfg = server.codeConfig!;
+    const localBase = this.getLocalWorkspacePath(server);
+    const relative = path.relative(localBase, localFilePath);
+    const target = path.join(cfg.localDagsPath!.replace('~', os.homedir()), relative);
+    await fs.promises.unlink(target).catch(() => undefined);
+  }
+
+  async deleteFileFromRemote(server: ServerProfile, localFilePath: string): Promise<void> {
+    const cfg = server.codeConfig!;
+    const localBase = this.getLocalWorkspacePath(server);
+    const relative = path.relative(localBase, localFilePath).replace(/\\/g, '/');
+    const remoteFile = `${cfg.remoteDagsPath}/${relative}`;
+
+    const port = cfg.remotePort || 22;
+    const sshArgs: string[] = ['-p', port.toString()];
+    if (cfg.remoteKeyPath) sshArgs.push('-i', cfg.remoteKeyPath.replace('~', os.homedir()), '-o', 'StrictHostKeyChecking=no');
+    sshArgs.push(`${cfg.remoteUser}@${cfg.remoteHost}`, `rm -f "${remoteFile}"`);
+
+    try {
+      await execFileAsync('ssh', sshArgs);
+    } catch (error: any) {
+      throw new Error(`Remote delete failed: ${error.message}`);
+    }
+  }
+
   // ─── Self-hosted local ─────────────────────────────────────────────────────
 
   async pullFromLocal(server: ServerProfile): Promise<SyncResult> {
@@ -175,7 +202,12 @@ export class CodeSyncManager {
     Logger.info('CodeSyncManager.pullFromRemote', { remote, localPath });
 
     const args = ['-avz', '--delete'];
-    if (cfg.remoteKeyPath) args.push('-e', `ssh -i ${cfg.remoteKeyPath.replace('~', os.homedir())} -o StrictHostKeyChecking=no`);
+    const port = cfg.remotePort || 22;
+    if (cfg.remoteKeyPath) {
+      args.push('-e', `ssh -p ${port} -i ${cfg.remoteKeyPath.replace('~', os.homedir())} -o StrictHostKeyChecking=no`);
+    } else {
+      args.push('-e', `ssh -p ${port} -o StrictHostKeyChecking=no`);
+    }
     args.push(remote, localPath + '/');
 
     try {
@@ -195,7 +227,12 @@ export class CodeSyncManager {
     Logger.info('CodeSyncManager.pushToRemote', { localPath, remote });
 
     const args = ['-avz', '--delete'];
-    if (cfg.remoteKeyPath) args.push('-e', `ssh -i ${cfg.remoteKeyPath.replace('~', os.homedir())} -o StrictHostKeyChecking=no`);
+    const port = cfg.remotePort || 22;
+    if (cfg.remoteKeyPath) {
+      args.push('-e', `ssh -p ${port} -i ${cfg.remoteKeyPath.replace('~', os.homedir())} -o StrictHostKeyChecking=no`);
+    } else {
+      args.push('-e', `ssh -p ${port} -o StrictHostKeyChecking=no`);
+    }
     args.push(localPath + '/', remote);
 
     try {
@@ -210,7 +247,13 @@ export class CodeSyncManager {
   // ─── Unified pull/push dispatch ───────────────────────────────────────────
 
   async pull(server: ServerProfile): Promise<SyncResult> {
-    if (server.type === 'mwaa') return this.pullFromS3(server);
+    if (server.type === 'mwaa') return this.pullFromS3(server, true);
+    if (server.codeConfig?.remoteHost) return this.pullFromRemote(server);
+    return this.pullFromLocal(server);
+  }
+
+  async pullOnly(server: ServerProfile): Promise<SyncResult> {
+    if (server.type === 'mwaa') return this.pullFromS3(server, false);
     if (server.codeConfig?.remoteHost) return this.pullFromRemote(server);
     return this.pullFromLocal(server);
   }
@@ -242,6 +285,16 @@ export class CodeSyncManager {
     await fs.promises.unlink(localFilePath).catch(() => undefined);
   }
 
+  async downloadFile(server: ServerProfile, localFilePath: string): Promise<void> {
+    if (server.type === 'mwaa') {
+      await this.downloadFileFromS3(server, localFilePath);
+    } else if (server.codeConfig?.remoteHost) {
+      await this.downloadFileFromRemote(server, localFilePath);
+    } else {
+      await this.downloadFileFromLocal(server, localFilePath);
+    }
+  }
+
   private async uploadFileToLocal(server: ServerProfile, localFilePath: string): Promise<void> {
     const cfg = server.codeConfig!;
     const localBase = this.getLocalWorkspacePath(server);
@@ -257,7 +310,8 @@ export class CodeSyncManager {
     const relative = path.relative(localBase, localFilePath).replace(/\\/g, '/');
     const remoteDest = `${cfg.remoteUser}@${cfg.remoteHost}:${cfg.remoteDagsPath}/${relative}`;
 
-    const args: string[] = [];
+    const port = cfg.remotePort || 22;
+    const args: string[] = ['-P', port.toString()];
     if (cfg.remoteKeyPath) args.push('-i', cfg.remoteKeyPath.replace('~', os.homedir()), '-o', 'StrictHostKeyChecking=no');
     args.push(localFilePath, remoteDest);
 
@@ -268,28 +322,46 @@ export class CodeSyncManager {
     }
   }
 
-  private async deleteFileFromLocal(server: ServerProfile, localFilePath: string): Promise<void> {
-    const cfg = server.codeConfig!;
-    const localBase = this.getLocalWorkspacePath(server);
-    const relative = path.relative(localBase, localFilePath);
-    const target = path.join(cfg.localDagsPath!.replace('~', os.homedir()), relative);
-    await fs.promises.unlink(target).catch(() => undefined);
-  }
-
-  private async deleteFileFromRemote(server: ServerProfile, localFilePath: string): Promise<void> {
+  private async downloadFileFromS3(server: ServerProfile, localFilePath: string): Promise<void> {
     const cfg = server.codeConfig!;
     const localBase = this.getLocalWorkspacePath(server);
     const relative = path.relative(localBase, localFilePath).replace(/\\/g, '/');
-    const remoteFile = `${cfg.remoteDagsPath}/${relative}`;
+    const s3Key = `${cfg.s3Prefix ?? ''}${relative}`;
 
-    const sshArgs: string[] = [];
-    if (cfg.remoteKeyPath) sshArgs.push('-i', cfg.remoteKeyPath.replace('~', os.homedir()), '-o', 'StrictHostKeyChecking=no');
-    sshArgs.push(`${cfg.remoteUser}@${cfg.remoteHost}`, `rm -f "${remoteFile}"`);
+    const args = ['s3', 'cp', `s3://${cfg.s3Bucket}/${s3Key}`, localFilePath];
+    if (server.awsProfile) args.push('--profile', server.awsProfile);
+    if (server.awsRegion) args.push('--region', server.awsRegion);
 
     try {
-      await execFileAsync('ssh', sshArgs);
+      await execFileAsync('aws', args);
     } catch (error: any) {
-      throw new Error(`Remote delete failed: ${error.message}`);
+      throw new Error(`S3 download failed: ${error.message}`);
+    }
+  }
+
+  private async downloadFileFromLocal(server: ServerProfile, localFilePath: string): Promise<void> {
+    const cfg = server.codeConfig!;
+    const localBase = this.getLocalWorkspacePath(server);
+    const relative = path.relative(localBase, localFilePath);
+    const src = path.join(cfg.localDagsPath!.replace('~', os.homedir()), relative);
+    await fs.promises.copyFile(src, localFilePath);
+  }
+
+  private async downloadFileFromRemote(server: ServerProfile, localFilePath: string): Promise<void> {
+    const cfg = server.codeConfig!;
+    const localBase = this.getLocalWorkspacePath(server);
+    const relative = path.relative(localBase, localFilePath).replace(/\\/g, '/');
+    const remoteSrc = `${cfg.remoteUser}@${cfg.remoteHost}:${cfg.remoteDagsPath}/${relative}`;
+
+    const port = cfg.remotePort || 22;
+    const args: string[] = ['-P', port.toString()];
+    if (cfg.remoteKeyPath) args.push('-i', cfg.remoteKeyPath.replace('~', os.homedir()), '-o', 'StrictHostKeyChecking=no');
+    args.push(remoteSrc, localFilePath);
+
+    try {
+      await execFileAsync('scp', args);
+    } catch (error: any) {
+      throw new Error(`Remote download failed: ${error.message}`);
     }
   }
 

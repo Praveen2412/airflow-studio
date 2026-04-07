@@ -55,44 +55,20 @@ export class CodeFileItem extends vscode.TreeItem {
 
 export class CodeNotConfiguredItem extends vscode.TreeItem {
   constructor(public readonly server: ServerProfile) {
-    super('Configure code settings', vscode.TreeItemCollapsibleState.None);
+    super('Code path not configured', vscode.TreeItemCollapsibleState.None);
     this.contextValue = 'codeNotConfigured';
-    this.iconPath = new vscode.ThemeIcon('settings-gear');
-    this.tooltip = 'Set up DAG file path or S3 bucket to browse and edit code';
-    this.command = {
-      command: 'airflow.code.configure',
-      title: 'Configure Code Settings',
-      arguments: [{ server }]
-    };
+    this.iconPath = new vscode.ThemeIcon('info');
+    this.tooltip = 'Edit server settings to configure DAG file path or S3 bucket';
+    this.description = 'Edit server to configure';
   }
 }
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
-type CodeTreeItemType = CodeFolderItem | CodeFileItem | CodeNotConfiguredItem;
-
 export class CodeTreeProvider {
-  private syncManager = CodeSyncManager.getInstance();
+  syncManager = CodeSyncManager.getInstance();
 
-  async getChildren(element: CodeFolderItem | CodeFileItem): Promise<CodeTreeItemType[]> {
-    const server = element.server;
-
-    if (element instanceof CodeFolderItem) {
-      if (!server.codeConfig) {
-        return [new CodeNotConfiguredItem(server)];
-      }
-      const localPath = this.syncManager.getLocalWorkspacePath(server);
-      return this.listDir(server, localPath);
-    }
-
-    if (element instanceof CodeFileItem && element.isDirectory) {
-      return this.listDir(server, element.filePath);
-    }
-
-    return [];
-  }
-
-  private async listDir(server: ServerProfile, dirPath: string): Promise<CodeFileItem[]> {
+  async listDirPublic(server: ServerProfile, dirPath: string): Promise<CodeFileItem[]> {
     try {
       const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
       return entries

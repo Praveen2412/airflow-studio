@@ -239,8 +239,13 @@
       },
       {
         "command": "airflow.code.pull",
-        "title": "Airflow Studio: Pull from Source",
+        "title": "Airflow Studio: Pull from Source (Copy Only)",
         "icon": "$(cloud-download)"
+      },
+      {
+        "command": "airflow.code.sync",
+        "title": "Airflow Studio: Sync from Source (Delete Extra)",
+        "icon": "$(sync)"
       },
       {
         "command": "airflow.code.push",
@@ -259,13 +264,23 @@
       },
       {
         "command": "airflow.code.uploadFile",
-        "title": "Airflow Studio: Upload File to Source",
+        "title": "Airflow Studio: Push to Source",
         "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "airflow.code.downloadFile",
+        "title": "Airflow Studio: Pull from Source",
+        "icon": "$(cloud-download)"
       },
       {
         "command": "airflow.code.deleteFile",
         "title": "Airflow Studio: Delete File",
         "icon": "$(trash)"
+      },
+      {
+        "command": "airflow.code.renameFile",
+        "title": "Airflow Studio: Rename File",
+        "icon": "$(edit)"
       }
     ],
     "viewsContainers": {
@@ -364,28 +379,29 @@
           "when": "view == airflowServers && viewItem == dag"
         },
         {
-          "command": "airflow.code.configure",
-          "when": "view == airflowServers && viewItem == codeNotConfigured"
-        },
-        {
           "command": "airflow.code.pull",
           "when": "view == airflowServers && viewItem == codeFolder",
           "group": "inline@1"
         },
         {
-          "command": "airflow.code.push",
+          "command": "airflow.code.sync",
           "when": "view == airflowServers && viewItem == codeFolder",
           "group": "inline@2"
         },
         {
-          "command": "airflow.code.newFile",
+          "command": "airflow.code.push",
           "when": "view == airflowServers && viewItem == codeFolder",
           "group": "inline@3"
         },
         {
-          "command": "airflow.code.configure",
+          "command": "airflow.code.newFile",
           "when": "view == airflowServers && viewItem == codeFolder",
           "group": "inline@4"
+        },
+        {
+          "command": "airflow.code.configure",
+          "when": "view == airflowServers && viewItem == codeFolder",
+          "group": "inline@5"
         },
         {
           "command": "airflow.code.newFile",
@@ -398,12 +414,25 @@
           "group": "inline@1"
         },
         {
-          "command": "airflow.code.deleteFile",
+          "command": "airflow.code.downloadFile",
           "when": "view == airflowServers && viewItem == codeFile",
           "group": "inline@2"
         },
         {
+          "command": "airflow.code.deleteFile",
+          "when": "view == airflowServers && viewItem == codeFile",
+          "group": "inline@3"
+        },
+        {
           "command": "airflow.code.uploadFile",
+          "when": "view == airflowServers && viewItem == codeFile"
+        },
+        {
+          "command": "airflow.code.downloadFile",
+          "when": "view == airflowServers && viewItem == codeFile"
+        },
+        {
+          "command": "airflow.code.renameFile",
           "when": "view == airflowServers && viewItem == codeFile"
         },
         {
@@ -412,6 +441,10 @@
         },
         {
           "command": "airflow.code.pull",
+          "when": "view == airflowServers && viewItem == codeFolder"
+        },
+        {
+          "command": "airflow.code.sync",
           "when": "view == airflowServers && viewItem == codeFolder"
         },
         {
@@ -432,13 +465,13 @@
     "@types/vscode": "^1.80.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
+    "@vscode/vsce": "^2.22.0",
     "eslint": "^8.40.0",
-    "typescript": "^5.0.0",
-    "@vscode/vsce": "^2.22.0"
+    "typescript": "^5.0.0"
   },
   "dependencies": {
     "@aws-sdk/client-mwaa": "^3.400.0",
-    "@aws-sdk/client-s3": "^3.400.0",
+    "@aws-sdk/client-s3": "^3.1025.0",
     "@aws-sdk/client-sts": "^3.400.0",
     "@aws-sdk/credential-providers": "^3.400.0",
     "axios": "^1.6.0"

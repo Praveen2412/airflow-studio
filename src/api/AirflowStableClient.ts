@@ -198,13 +198,14 @@ export class AirflowStableClient implements IAirflowClient {
         dag_run_id: dagRunId,
         task_ids: taskIds,
         dry_run: false,
-        reset_dag_runs: true,  // Set DAG run state to RUNNING so tasks can be re-executed
+        reset_dag_runs: options?.resetDagRuns ?? true,
         include_upstream: options?.includeUpstream ?? false,
         include_downstream: options?.includeDownstream ?? false,
         include_future: options?.includeFuture ?? false,
-        only_failed: options?.onlyFailed ?? false
+        only_failed: options?.onlyFailed ?? false,
+        only_running: options?.onlyRunning ?? false
       });
-      Logger.info('AirflowStableClient.clearTaskInstances: Success', { dagId, dagRunId });
+      Logger.info('AirflowStableClient.clearTaskInstances: Success', { dagId, dagRunId, taskIds, options });
     } catch (error: any) {
       Logger.error('AirflowStableClient.clearTaskInstances: Failed', error, { dagId, dagRunId });
       throw error;

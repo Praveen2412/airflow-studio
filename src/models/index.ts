@@ -8,9 +8,11 @@ export interface CodeConfig {
 
   // Self-hosted remote (SSH)
   remoteHost?: string;
+  remotePort?: number;     // SSH port, default 22
   remoteUser?: string;
   remoteDagsPath?: string; // e.g. "/opt/airflow/dags"
   remoteKeyPath?: string;  // e.g. "~/.ssh/id_rsa"
+  // Note: remotePassword stored separately in VS Code secrets, not in config
 
   // Common
   localWorkspacePath?: string; // local folder where files are synced to
