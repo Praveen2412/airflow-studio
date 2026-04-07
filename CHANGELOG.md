@@ -36,6 +36,11 @@ All notable changes to the "Airflow Studio" extension will be documented in this
   - Only clear running tasks
   - Reset DAG runs to RUNNING state (default: checked)
   - Modal dialog with checkboxes for all options
+- **Continuous Log Streaming**: Auto-refresh for running task logs
+  - Automatically detects running/queued tasks
+  - Configurable refresh interval (default: 5 seconds)
+  - Manual toggle control in log viewer
+  - Automatic cleanup on navigation
 - If code not configured, tree shows "Configure code settings" prompt
 
 

@@ -135,7 +135,11 @@ export class DagDetailsPanel {
           break;
         case 'viewLogs':
           Logger.info('DagDetailsPanel: Viewing logs', { dagId: this.dagId, dagRunId: msg.dagRunId, taskId: msg.taskId, tryNumber: msg.tryNumber });
-          this.loadTaskLogs(msg.dagRunId, msg.taskId, msg.tryNumber || 1, msg.maxTries || 1);
+          this.loadTaskLogs(msg.dagRunId, msg.taskId, msg.tryNumber || 1, msg.maxTries || 1, msg.taskState);
+          break;
+        case 'stopLogStreaming':
+          Logger.info('DagDetailsPanel: Stopping log streaming');
+          this.panel.webview.postMessage({ command: 'logStreamingStopped' });
           break;
         case 'viewRendered':
           Logger.info('DagDetailsPanel: Viewing rendered template', { dagId: this.dagId, dagRunId: msg.dagRunId, taskId: msg.taskId });
@@ -251,14 +255,16 @@ export class DagDetailsPanel {
     }
   }
 
-  private async loadTaskLogs(dagRunId: string, taskId: string, tryNumber: number, maxTries: number) {
+  private async loadTaskLogs(dagRunId: string, taskId: string, tryNumber: number, maxTries: number, taskState?: string) {
     try {
-      Logger.debug('DagDetailsPanel.loadTaskLogs: Starting', { dagId: this.dagId, dagRunId, taskId, tryNumber });
+      Logger.debug('DagDetailsPanel.loadTaskLogs: Starting', { dagId: this.dagId, dagRunId, taskId, tryNumber, taskState });
       const client = await this.serverManager.getClient(this.serverId);
       if (!client) return;
       const logs = await client.getTaskLogs(this.dagId, taskId, dagRunId, tryNumber);
       Logger.info('DagDetailsPanel.loadTaskLogs: Success', { dagId: this.dagId, taskId, tryNumber, logLength: logs.length });
-      this.panel.webview.postMessage({ command: 'showLogs', logs, taskId, tryNumber, maxTries, dagRunId });
+      const isRunning = taskState === 'running' || taskState === 'queued';
+      const logStreamInterval = vscode.workspace.getConfiguration('airflowStudio').get<number>('logStreamInterval', 5000);
+      this.panel.webview.postMessage({ command: 'showLogs', logs, taskId, tryNumber, maxTries, dagRunId, taskState, isRunning, logStreamInterval });
     } catch (error: any) {
       Logger.error('DagDetailsPanel.loadTaskLogs: Failed', error, { dagId: this.dagId, taskId, tryNumber });
       vscode.window.showErrorMessage(`Failed to load logs: ${error.message}`);
@@ -414,6 +420,9 @@ label{display:block;margin:6px 0 3px;font-weight:600;font-size:11px}
   <div class="toolbar">
     <h3 id="inlineTitle"></h3>
     <select id="trySelector" style="display:none;margin-right:8px"></select>
+    <label id="autoRefreshLabel" style="display:none;margin:0;font-size:10px;cursor:pointer;margin-right:8px">
+      <input type="checkbox" id="autoRefreshCheckbox" style="width:auto;margin:0 4px 0 0"> <span id="autoRefreshText">Auto-refresh (5s)</span>
+    </label>
     <button class="secondary" id="btnBack" title="Go back to main view">← Back</button>
     <button id="btnOpenEditor" style="display:none" title="Open source code in editor">📝 Open</button>
   </div>
@@ -485,8 +494,9 @@ document.getElementById('trySelector').addEventListener('change',function(e){
   const dagRunId=sel.dataset.dagRunId;
   const taskId=sel.dataset.taskId;
   const maxTries=parseInt(sel.dataset.maxTries);
+  const taskState=sel.dataset.taskState||'';
   if(tryNum&&dagRunId&&taskId){
-    vscode.postMessage({command:'viewLogs',dagRunId:dagRunId,taskId:taskId,tryNumber:tryNum,maxTries:maxTries});
+    vscode.postMessage({command:'viewLogs',dagRunId:dagRunId,taskId:taskId,tryNumber:tryNum,maxTries:maxTries,taskState:taskState});
   }
 });
 document.getElementById('btnOpenEditor').addEventListener('click',function(){vscode.postMessage({command:'openInEditor'});});
@@ -503,11 +513,12 @@ window.addEventListener('message',function(e){
   console.log('[Airflow] Message received from extension:', msg.command, msg);
   if(msg.command==='updateDagRuns')displayDagRuns(msg.runs,msg.error);
   else if(msg.command==='updateTasks')displayTasks(msg.tasks,msg.dagRunId,msg.error);
-  else if(msg.command==='showLogs')showLogs(msg.taskId,msg.logs,msg.tryNumber,msg.maxTries,msg.dagRunId);
+  else if(msg.command==='showLogs')showLogs(msg.taskId,msg.logs,msg.tryNumber,msg.maxTries,msg.dagRunId,msg.taskState,msg.isRunning);
   else if(msg.command==='showRendered')showInline('Rendered: '+msg.taskId,msg.content,false);
   else if(msg.command==='showCode')showInline('Source: '+msg.dagId,msg.source,true);
   else if(msg.command==='updateTaskStructure')updateTaskStructure(msg.tasks);
   else if(msg.command==='showClearTaskDialog')showClearTaskDialog(msg.dagRunId,msg.taskId);
+  else if(msg.command==='logStreamingStopped')stopLogStreaming();
 });
 function updateTaskStructure(tasks){
   console.log('[Airflow] Updating task structure:', tasks ? tasks.length : 0, 'tasks');
@@ -529,7 +540,8 @@ function showInline(title,content,showEditor){
   document.getElementById('btnOpenEditor').style.display=showEditor?'inline-block':'none';
   document.getElementById('trySelector').style.display='none';
 }
-function showLogs(taskId,logs,tryNumber,maxTries,dagRunId){
+function showLogs(taskId,logs,tryNumber,maxTries,dagRunId,taskState,isRunning,logStreamInterval){
+  stopLogStreaming();
   document.getElementById('mainView').style.display='none';
   document.getElementById('inlineView').style.display='block';
   document.getElementById('inlineTitle').textContent='Logs: '+taskId;
@@ -549,8 +561,22 @@ function showLogs(taskId,logs,tryNumber,maxTries,dagRunId){
     sel.dataset.dagRunId=dagRunId;
     sel.dataset.taskId=taskId;
     sel.dataset.maxTries=maxTries;
+    sel.dataset.taskState=taskState||'';
   }else{
     sel.style.display='none';
+  }
+  const autoRefreshLabel=document.getElementById('autoRefreshLabel');
+  const autoRefreshCheckbox=document.getElementById('autoRefreshCheckbox');
+  const autoRefreshText=document.getElementById('autoRefreshText');
+  const intervalSeconds=(logStreamInterval||5000)/1000;
+  if(autoRefreshText)autoRefreshText.textContent='Auto-refresh ('+intervalSeconds+'s)';
+  if(isRunning){
+    autoRefreshLabel.style.display='inline-block';
+    autoRefreshCheckbox.checked=true;
+    startLogStreaming(dagRunId,taskId,tryNumber,maxTries,taskState,logStreamInterval||5000);
+  }else{
+    autoRefreshLabel.style.display='none';
+    autoRefreshCheckbox.checked=false;
   }
 }
 function displayDagRuns(runs,error){
@@ -578,7 +604,7 @@ function displayTasks(tasks,dagRunId,error){
     const state=task.state||'none';
     const dur=task.duration?task.duration.toFixed(2)+'s':'-';
     h+='<tr><td>'+esc(task.taskId)+'</td><td><span class="status '+esc(state)+'">'+esc(state)+'</span></td><td>'+task.tryNumber+'</td><td>'+dur+'</td><td class="task-actions">'
-      +'<button class="small" data-action="view-logs" data-run-id="'+attr(dagRunId)+'" data-task-id="'+attr(task.taskId)+'" data-try="'+task.tryNumber+'" data-max-tries="'+task.tryNumber+'" title="View task logs">📄</button>'
+      +'<button class="small" data-action="view-logs" data-run-id="'+attr(dagRunId)+'" data-task-id="'+attr(task.taskId)+'" data-try="'+task.tryNumber+'" data-max-tries="'+task.tryNumber+'" data-task-state="'+attr(state)+'" title="View task logs">📄</button>'
       +'<button class="small" data-action="view-rendered" data-run-id="'+attr(dagRunId)+'" data-task-id="'+attr(task.taskId)+'" title="View rendered template">📝</button>'
       +'<button class="small secondary" data-action="clear-task" data-run-id="'+attr(dagRunId)+'" data-task-id="'+attr(task.taskId)+'" title="Clear task instance to re-run">🔄</button>'
       +'<select data-action="set-task-state" data-run-id="'+attr(dagRunId)+'" data-task-id="'+attr(task.taskId)+'" title="Manually set task state"><option value="">Set...</option><option value="success">✓ Success</option><option value="failed">✗ Failed</option><option value="skipped">⏭ Skipped</option></select>'
@@ -608,7 +634,7 @@ document.addEventListener('click',function(e){
     vscode.postMessage({command:'setDagRunState',dagRunId:runId,state:'failed'});
   }else if(action==='view-logs'){
     console.log('[Airflow] Viewing logs for task:', taskId);
-    vscode.postMessage({command:'viewLogs',dagRunId:runId,taskId:taskId,tryNumber:parseInt(btn.dataset.try),maxTries:parseInt(btn.dataset.maxTries||'1')});
+    vscode.postMessage({command:'viewLogs',dagRunId:runId,taskId:taskId,tryNumber:parseInt(btn.dataset.try),maxTries:parseInt(btn.dataset.maxTries||'1'),taskState:btn.dataset.taskState||''});
   }else if(action==='view-rendered'){
     console.log('[Airflow] Viewing rendered template for task:', taskId);
     vscode.postMessage({command:'viewRendered',dagRunId:runId,taskId:taskId});
@@ -631,6 +657,45 @@ document.addEventListener('change',function(e){
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function attr(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
 let currentClearTaskData=null;
+let logStreamingInterval=null;
+let logStreamingData=null;
+let currentLogStreamInterval=5000;
+function startLogStreaming(dagRunId,taskId,tryNumber,maxTries,taskState,interval){
+  stopLogStreaming();
+  currentLogStreamInterval=interval||5000;
+  logStreamingData={dagRunId:dagRunId,taskId:taskId,tryNumber:tryNumber,maxTries:maxTries,taskState:taskState};
+  logStreamingInterval=setInterval(function(){
+    const checkbox=document.getElementById('autoRefreshCheckbox');
+    if(!checkbox||!checkbox.checked){
+      stopLogStreaming();
+      return;
+    }
+    console.log('[Airflow] Auto-refreshing logs for task:', taskId);
+    vscode.postMessage({command:'viewLogs',dagRunId:dagRunId,taskId:taskId,tryNumber:tryNumber,maxTries:maxTries,taskState:taskState});
+  },currentLogStreamInterval);
+}
+function stopLogStreaming(){
+  if(logStreamingInterval){
+    clearInterval(logStreamingInterval);
+    logStreamingInterval=null;
+    logStreamingData=null;
+    console.log('[Airflow] Stopped log streaming');
+  }
+}
+document.getElementById('autoRefreshCheckbox').addEventListener('change',function(e){
+  if(e.target.checked&&logStreamingData){
+    startLogStreaming(logStreamingData.dagRunId,logStreamingData.taskId,logStreamingData.tryNumber,logStreamingData.maxTries,logStreamingData.taskState,currentLogStreamInterval);
+  }else{
+    stopLogStreaming();
+  }
+});
+document.getElementById('btnBack').addEventListener('click',function(){
+  stopLogStreaming();
+  document.getElementById('inlineView').style.display='none';
+  document.getElementById('mainView').style.display='block';
+  document.getElementById('trySelector').style.display='none';
+  document.getElementById('autoRefreshLabel').style.display='none';
+});
 function showClearTaskDialog(dagRunId,taskId){
   currentClearTaskData={dagRunId:dagRunId,taskId:taskId};
   document.getElementById('clearTaskOverlay').style.display='block';

@@ -94,6 +94,11 @@
           "type": "number",
           "default": 100,
           "description": "Default limit for API list operations (default: 100)"
+        },
+        "airflowStudio.logStreamInterval": {
+          "type": "number",
+          "default": 5000,
+          "description": "Auto-refresh interval for streaming task logs in milliseconds (default: 5000 = 5 seconds)"
         }
       }
     },

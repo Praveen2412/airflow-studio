@@ -46,6 +46,10 @@ Airflow Studio is a comprehensive VS Code extension that brings the power of Apa
 - **Change State**: Manually set task states (success, failed, skipped)
 - **Multi-Try Logs**: View logs from different retry attempts
 - **Real-Time Logs**: Stream logs for running tasks with auto-refresh
+  - Automatic detection of running/queued tasks
+  - Configurable refresh interval (default: 5 seconds)
+  - Manual toggle control
+  - Automatic cleanup on navigation
 - **Rendered Templates**: View rendered Jinja2 templates for task parameters (Airflow 3.x)
 
 ### ⚙️ Admin Tools
@@ -172,6 +176,11 @@ Airflow Studio is a comprehensive VS Code extension that brings the power of Apa
 **Task States**: Color-coded indicators (success, failed, running, queued, etc.)
 
 **View Task Logs**: Click on task instance → "View Logs"
+
+**Auto-Refresh Logs**: For running/queued tasks, logs automatically refresh
+- Toggle auto-refresh on/off with checkbox in log viewer
+- Configure refresh interval in Settings (default: 5 seconds)
+- Automatic cleanup when navigating away
 
 **Change Log Try**: Use dropdown to view logs from different retry attempts
 
@@ -317,6 +326,12 @@ Access via `File` → `Preferences` → `Settings` → Search "Airflow Studio"
 - Enable debug-level logging in Output panel
 - Useful for troubleshooting connection or API issues
 - When enabled, logs all HTTP requests and responses
+
+**`airflowStudio.logStreamInterval`** (number, default: `5000`)
+- Auto-refresh interval for streaming task logs in milliseconds
+- Controls how frequently logs are refreshed for running/queued tasks
+- Set to higher values (e.g., 10000) for less frequent updates
+- Set to lower values (e.g., 2000) for more real-time updates
 
 ### Stored Data
 
